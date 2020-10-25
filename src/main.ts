@@ -17,6 +17,8 @@ import { Value, Object } from '@quenk/noni/lib/data/json';
 
 type ScriptResult = Object | void;
 
+const FILE_MOCHA_JS = path.resolve(__dirname, '../vendor/mocha/mocha.js');
+
 const SCRIPT_SETUP = `
 
     window.testmeh = { log: console.log, buffer: [] };
@@ -62,23 +64,54 @@ const defaultOptions = (args: Object): Object => ({
 
     url: <string>args['--url'],
 
-    keepOpen: args['--keep-open'] ? true : false
+    keepOpen: args['--keep-open'] ? true : false,
+
+    injectMocha: args['--inject-mocha'] ? true : false
 
 });
 
 const args: Object = defaultOptions(docopt.docopt(`
 
 Usage:
-   ${BIN} --url=URL [--keep-open] <file>
+   ${BIN} --url=URL [--keep-open] [--inject-mocha] <file>
 
 Options:
 -h --help                  Show this screen.
 --version                  Show the version of ${BIN}.
 --url=URL                  The URL to open in the browser.
 --keep-open                If specified, the browser window will remain open.
+--inject-mocha             If specified, the mocha.js script will be dynamically
+                           inserted to the page.
 `, { version: require('../package.json').version }));
 
 let driver: WebDriver;
+
+const resolve = (str: string) =>
+    path.isAbsolute(str) ? str : path.resolve(process.cwd(), str);
+
+const executeScript = (driver: WebDriver, script: string, args: Value[] = []) =>
+    doFuture(function*() {
+
+        let result = yield liftP(() => driver.executeScript(script, ...args));
+        return checkResult(result);
+
+    });
+
+const executeAsyncScript =
+    (driver: WebDriver, script: string, args: Value[] = []) =>
+        doFuture(function*() {
+
+            let result = yield liftP(() =>
+                driver.executeAsyncScript(script, ...args));
+
+            return checkResult(result);
+
+        });
+
+const checkResult = (result: ScriptResult): Future<ScriptResult> =>
+    ((result != null) && (result.type === 'error')) ?
+        raise<ScriptResult>(new Error(`Test failed: ${result.message} `)) :
+        pure<ScriptResult>(result);
 
 const onFinish = () => doFuture(function*() {
 
@@ -107,30 +140,6 @@ const onSuccess = (result: ScriptResult) => {
 
 }
 
-const resolve = (str: string) =>
-    path.isAbsolute(str) ? str : path.resolve(process.cwd(), str);
-
-const executeScript = (driver: WebDriver, script: string) =>
-    doFuture(function*() {
-
-        let result = yield liftP(() => driver.executeScript(script));
-        return checkResult(result);
-
-    });
-
-const executeAsyncScript = (driver: WebDriver, script: string) =>
-    doFuture(function*() {
-
-        let result = yield liftP(() => driver.executeAsyncScript(script));
-        return checkResult(result);
-
-    });
-
-const checkResult = (result: ScriptResult): Future<ScriptResult> =>
-    ((result != null) && (result.type === 'error')) ?
-        raise<ScriptResult>(new Error(`Test failed: ${result.message} `)) :
-        pure<ScriptResult>(result);
-
 const main = () => doFuture<ScriptResult>(function*() {
 
     let script = yield readTextFile(resolve(<string>args['file']));
@@ -138,6 +147,13 @@ const main = () => doFuture<ScriptResult>(function*() {
     driver = yield liftP(() => new Builder().forBrowser('firefox').build());
 
     yield liftP(() => driver.get(<string>args['url']));
+
+    if (args['injectMocha']) {
+
+      let js = yield readTextFile(FILE_MOCHA_JS);
+      yield executeScript(driver, js);
+
+    }
 
     yield executeAsyncScript(driver, SCRIPT_SETUP);
 
