@@ -17,6 +17,38 @@ import { Value, Object } from '@quenk/noni/lib/data/json';
 
 type ScriptResult = Object | void;
 
+/**
+ * Options used during execution, converted from command line input.
+ */
+interface Options {
+
+    /**
+     * file path containing test.
+     */
+    file: string,
+
+    /**
+     * url to access and run tests on.
+     */
+    url: string,
+
+    /**
+     * keepOpen if true will attempt to leave the browser open after testing.
+     */
+    keepOpen: boolean,
+
+    /**
+     * injectMocha if true, will automatically inject the mocha.js framework.
+     */
+    injectMocha: boolean,
+
+    /**
+     * browser we are testing.
+     */
+    browser: string,
+
+}
+
 const FILE_MOCHA_JS = path.resolve(__dirname, '../vendor/mocha/mocha.js');
 
 const SCRIPT_SETUP = `
@@ -58,7 +90,7 @@ const SCRIPT_RUN = `
 
 const BIN = path.basename(__filename);
 
-const defaultOptions = (args: Object): Object => ({
+const defaultOptions = (args: Object): Options => ({
 
     file: <string>args['<file>'],
 
@@ -66,14 +98,25 @@ const defaultOptions = (args: Object): Object => ({
 
     keepOpen: args['--keep-open'] ? true : false,
 
-    injectMocha: args['--inject-mocha'] ? true : false
+    injectMocha: args['--inject-mocha'] ? true : false,
+
+    browser: getBrowser(args)
 
 });
 
-const args: Object = defaultOptions(docopt.docopt(`
+const getBrowser = (args: Object) => {
+
+    let selected = args['--browser'] || process.env.BROWSER;
+
+    return ((selected === 'firefox') || (selected === 'chrome')) ?
+        selected : 'firefox';
+
+}
+
+const options: Options = defaultOptions(docopt.docopt(`
 
 Usage:
-   ${BIN} --url=URL [--keep-open] [--inject-mocha] <file>
+   ${BIN} --url=URL [--keep-open] [--inject-mocha] [--browser=BROWSER] <file>
 
 Options:
 -h --help                  Show this screen.
@@ -82,6 +125,8 @@ Options:
 --keep-open                If specified, the browser window will remain open.
 --inject-mocha             If specified, the mocha.js script will be dynamically
                            inserted to the page.
+--browser=BROWSER          Specify the browser to run, either firefox (default)
+                           or chrome.
 `, { version: require('../package.json').version }));
 
 let driver: WebDriver;
@@ -115,7 +160,7 @@ const checkResult = (result: ScriptResult): Future<ScriptResult> =>
 
 const onFinish = () => doFuture(function*() {
 
-    if ((driver != null) && !(args['keepOpen']))
+    if ((driver != null) && !(options.keepOpen))
         yield liftP(() => driver.quit());
 
     return pure(<void>undefined);
@@ -125,7 +170,7 @@ const onFinish = () => doFuture(function*() {
 const onError = (e: Error) => {
 
     console.error(`An error occured while executing` +
-        `"${args['url']}": \n ${e.message} `);
+        `"${options.url}": \n ${e.message} `);
 
     return raise<void>(e);
 
@@ -142,16 +187,17 @@ const onSuccess = (result: ScriptResult) => {
 
 const main = () => doFuture<ScriptResult>(function*() {
 
-    let script = yield readTextFile(resolve(<string>args['file']));
+    let script = yield readTextFile(resolve(options.file));
 
-    driver = yield liftP(() => new Builder().forBrowser('firefox').build());
+    driver = yield liftP(() =>
+        new Builder().forBrowser(options.browser).build());
 
-    yield liftP(() => driver.get(<string>args['url']));
+    yield liftP(() => driver.get(options.url));
 
-    if (args['injectMocha']) {
+    if (options.injectMocha) {
 
-      let js = yield readTextFile(FILE_MOCHA_JS);
-      yield executeScript(driver, js);
+        let js = yield readTextFile(FILE_MOCHA_JS);
+        yield executeScript(driver, js);
 
     }
 
