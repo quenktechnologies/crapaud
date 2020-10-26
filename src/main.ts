@@ -1,13 +1,17 @@
 #! /usr/bin/env node
 
 import * as path from 'path';
+import * as os from 'os';
 import * as docopt from 'docopt';
 
+import { execFile } from 'child_process';
 import { Builder, WebDriver } from 'selenium-webdriver';
 
 import {
     Future,
     doFuture,
+    fromCallback,
+    sequential,
     liftP,
     pure,
     raise
@@ -46,6 +50,16 @@ interface Options {
      * browser we are testing.
      */
     browser: string,
+
+    /**
+     * before is a list of script paths to execute before the test.
+     */
+    before: string[],
+
+    /**
+     * after is a list of script paths to execute after the test.
+     */
+    after: string[]
 
 }
 
@@ -100,7 +114,11 @@ const defaultOptions = (args: Object): Options => ({
 
     injectMocha: args['--inject-mocha'] ? true : false,
 
-    browser: getBrowser(args)
+    browser: getBrowser(args),
+
+    before: Array.isArray(args['--before']) ? <string[]>args['--before'] : [],
+
+    after: Array.isArray(args['--after']) ? <string[]>args['--after'] : []
 
 });
 
@@ -116,7 +134,8 @@ const getBrowser = (args: Object) => {
 const options: Options = defaultOptions(docopt.docopt(`
 
 Usage:
-   ${BIN} --url=URL [--keep-open] [--inject-mocha] [--browser=BROWSER] <file>
+   ${BIN} --url=URL [--keep-open] [--inject-mocha] [..--browser=BROWSER] 
+          [--before=PATH...] [--after=PATH...] <file>
 
 Options:
 -h --help                  Show this screen.
@@ -127,6 +146,10 @@ Options:
                            inserted to the page.
 --browser=BROWSER          Specify the browser to run, either firefox (default)
                            or chrome.
+--before=PATH              Specifies a command line script to execute before
+                           running the test.
+--after=PATH               Specifies a command line script to execute after
+                           running the test.
 `, { version: require('../package.json').version }));
 
 let driver: WebDriver;
@@ -158,19 +181,25 @@ const checkResult = (result: ScriptResult): Future<ScriptResult> =>
         raise<ScriptResult>(new Error(`Test failed: ${result.message} `)) :
         pure<ScriptResult>(result);
 
-const onFinish = () => doFuture(function*() {
+const execScripts = (scripts: string[] = []) =>
+    sequential(scripts.map(target => fromCallback(cb => {
 
-    if ((driver != null) && !(options.keepOpen))
-        yield liftP(() => driver.quit());
+        execFile(resolve(target), [options.file], (err, stdout, stderr) => {
 
-    return pure(<void>undefined);
+            if (stdout) console.log(stdout);
 
-});
+            if (stderr) console.error(stderr);
+
+            cb(err);
+
+        });
+
+    })));
 
 const onError = (e: Error) => {
 
-    console.error(`An error occured while executing` +
-        `"${options.url}": \n ${e.message} `);
+    console.error(`An error occured while executing tests for ` +
+        `"${options.url}": ${os.EOL} ${e.message} `);
 
     return raise<void>(e);
 
@@ -185,9 +214,18 @@ const onSuccess = (result: ScriptResult) => {
 
 }
 
-const main = () => doFuture<ScriptResult>(function*() {
+const onFinish = () => doFuture(function*() {
 
-    let script = yield readTextFile(resolve(options.file));
+    if ((driver != null) && !(options.keepOpen))
+        yield liftP(() => driver.quit());
+
+    yield execScripts(options.after);
+
+    return pure(<void>undefined);
+
+});
+
+const main = () => doFuture<ScriptResult>(function*() {
 
     driver = yield liftP(() =>
         new Builder().forBrowser(options.browser).build());
@@ -202,6 +240,10 @@ const main = () => doFuture<ScriptResult>(function*() {
     }
 
     yield executeAsyncScript(driver, SCRIPT_SETUP);
+
+    yield execScripts(options.before);
+
+    let script = yield readTextFile(resolve(options.file));
 
     yield executeScript(driver, script);
 

@@ -1,11 +1,11 @@
 {
-  "name": "@quenk/testmeh",
+  "name": "@quenk/crapaud",
   "version": "0.0.1",
   "description": "Run tests using selenium.",
   "main": "lib/main.js",
   "bin": {
 
-    "testmeh": "./lib/main.js"
+    "crapaud": "./lib/main.js"
 
   },
   "types": "lib/index.d.ts",
