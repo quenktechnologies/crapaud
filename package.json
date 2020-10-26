@@ -1,7 +1,7 @@
 {
   "name": "@quenk/crapaud",
   "version": "0.0.1",
-  "description": "Run tests using selenium.",
+  "description": "Tool for running tests against Single Page Applications.",
   "main": "lib/main.js",
   "bin": {
 

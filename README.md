@@ -2,6 +2,9 @@
 # Crapaud
 
 ## Introduction
+
+Tool for running tests against Single Page Applications.
+
 This module provides an executable for executing mocha tests for a Single Page
 Application via the Selenium Web Driver. It works by injecting the contents of
 a test file into the page of the running application.
