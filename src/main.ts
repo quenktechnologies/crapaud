@@ -27,9 +27,9 @@ type ScriptResult = Object | void;
 interface Options {
 
     /**
-     * file path containing test.
+     * test file path containing test.
      */
-    file: string,
+    test: string,
 
     /**
      * url to access and run tests on.
@@ -106,9 +106,9 @@ const BIN = path.basename(__filename);
 
 const defaultOptions = (args: Object): Options => ({
 
-    file: <string>args['<file>'],
+    test: <string>args['--test'],
 
-    url: <string>args['--url'],
+    url: <string>args['<url>'],
 
     keepOpen: args['--keep-open'] ? true : false,
 
@@ -134,13 +134,13 @@ const getBrowser = (args: Object) => {
 const options: Options = defaultOptions(docopt.docopt(`
 
 Usage:
-   ${BIN} --url=URL [--keep-open] [--inject-mocha] [..--browser=BROWSER] 
-          [--before=PATH...] [--after=PATH...] <file>
+   ${BIN} --test=PATH [--keep-open] [--inject-mocha] [--browser=BROWSER] 
+          [--before=PATH...] [--after=PATH...] <url>
 
 Options:
 -h --help                  Show this screen.
 --version                  Show the version of ${BIN}.
---url=URL                  The URL to open in the browser.
+--test=PATH                The path to the test to run.
 --keep-open                If specified, the browser window will remain open.
 --inject-mocha             If specified, the mocha.js script will be dynamically
                            inserted to the page.
@@ -184,7 +184,7 @@ const checkResult = (result: ScriptResult): Future<ScriptResult> =>
 const execScripts = (scripts: string[] = []) =>
     sequential(scripts.map(target => fromCallback(cb => {
 
-        execFile(resolve(target), [options.file], (err, stdout, stderr) => {
+        execFile(resolve(target), [options.test], (err, stdout, stderr) => {
 
             if (stdout) console.log(stdout);
 
@@ -243,7 +243,7 @@ const main = () => doFuture<ScriptResult>(function*() {
 
     yield execScripts(options.before);
 
-    let script = yield readTextFile(resolve(options.file));
+    let script = yield readTextFile(resolve(options.test));
 
     yield executeScript(driver, script);
 
