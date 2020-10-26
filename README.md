@@ -22,4 +22,4 @@ Apache 2.0
 
 (c) 2020 Quenk Technologies Limited
 
-[1][https://www.selenium.dev/documentation/en/webdriver/driver_requirements/#quick-reference]
+[1]:https://www.selenium.dev/documentation/en/webdriver/driver_requirements/#quick-reference
