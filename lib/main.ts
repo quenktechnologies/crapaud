@@ -3,6 +3,7 @@
 import * as path from 'path';
 import * as os from 'os';
 import * as docopt from 'docopt';
+import * as json from '@quenk/noni/lib/data/json';
 
 import { execFile } from 'child_process';
 import { Builder, WebDriver } from 'selenium-webdriver';
@@ -14,42 +15,59 @@ import {
     sequential,
     liftP,
     pure,
-    raise
+    raise,
+    attempt
 } from '@quenk/noni/lib/control/monad/future';
 import { readTextFile } from '@quenk/noni/lib/io/file';
 import { Value, Object } from '@quenk/noni/lib/data/json';
+import { isObject } from '@quenk/noni/lib/data/type';
 
-type ScriptResult = Object | void;
+import { and, Precondition } from '@quenk/preconditions';
+import { isString } from '@quenk/preconditions/lib/string';
+import { isBoolean } from '@quenk/preconditions/lib/boolean';
+import { isRecord, restrict } from '@quenk/preconditions/lib/record';
+import { isArray, map as arrayMap } from '@quenk/preconditions/lib/array';
+
+type ScriptResult = json.Object | void;
 
 /**
- * Options used during execution, converted from command line input.
+ * CLIOptions received from the terminal.
  */
-interface Options {
+interface CLIOptions {
 
     /**
-     * test file path containing test.
+     * path to the test suite config file.
      */
-    test: string,
+    path: string
+
+}
+
+/**
+ * TestConf contains the configuration information needed to execute a single
+ * test.
+ */
+interface TestConf extends json.Object {
+
+    /*
+     * path to the test file.
+     */
+    path: string,
 
     /**
-     * url to access and run tests on.
+     * browser to run the test in.
+     */
+    browser: string,
+
+    /**
+     * url to visit in the web browser.
      */
     url: string,
 
     /**
-     * keepOpen if true will attempt to leave the browser open after testing.
-     */
-    keepOpen: boolean,
-
-    /**
-     * injectMocha if true, will automatically inject the mocha.js framework.
+     * injectMocha if true, will inject a mochajs script into the url's web 
+     * page.
      */
     injectMocha: boolean,
-
-    /**
-     * browser we are testing.
-     */
-    browser: string,
 
     /**
      * before is a list of script paths to execute before the test.
@@ -59,7 +77,24 @@ interface Options {
     /**
      * after is a list of script paths to execute after the test.
      */
-    after: string[]
+    after: string[],
+
+    /**
+     * keepOpen if true will attempt to leave the browser open after testing.
+     */
+    keepOpen: boolean,
+
+}
+
+/**
+ * TestSuiteConf contains configuration info for a group of tests.
+ */
+interface TestSuiteConf extends json.Object {
+
+    /**
+     * tests to execute in this suite.
+     */
+    tests: TestConf[]
 
 }
 
@@ -102,60 +137,32 @@ const SCRIPT_RUN = `
     });
 `;
 
-const BIN = path.basename(__filename);
+const errorTemplates = {
 
-const defaultOptions = (args: Object): Options => ({
+};
 
-    test: <string>args['--test'],
+/**
+ * readJSONFile reads the contents of a file as JSON.
+ */
+const readJSONFile = (path: string): Future<json.Object> =>
+    doFuture(function*() {
 
-    url: <string>args['<url>'],
+        let txt = yield readTextFile(path);
 
-    keepOpen: args['--keep-open'] ? true : false,
+        return attempt(() => JSON.parse(txt));
 
-    injectMocha: args['--inject-mocha'] ? true : false,
+    })
 
-    browser: getBrowser(args),
-
-    before: Array.isArray(args['--before']) ? <string[]>args['--before'] : [],
-
-    after: Array.isArray(args['--after']) ? <string[]>args['--after'] : []
-
-});
-
-const getBrowser = (args: Object) => {
-
-    let selected = args['--browser'] || process.env.BROWSER;
-
-    return ((selected === 'firefox') || (selected === 'chrome')) ?
-        selected : 'firefox';
-
-}
-
-const options: Options = defaultOptions(docopt.docopt(`
-
-Usage:
-   ${BIN} --test=PATH [--keep-open] [--inject-mocha] [--browser=BROWSER] 
-          [--before=PATH...] [--after=PATH...] <url>
-
-Options:
--h --help                  Show this screen.
---version                  Show the version of ${BIN}.
---test=PATH                The path to the test to run.
---keep-open                If specified, the browser window will remain open.
---inject-mocha             If specified, the mocha.js script will be dynamically
-                           inserted to the page.
---browser=BROWSER          Specify the browser to run, either firefox (default)
-                           or chrome.
---before=PATH              Specifies a command line script to execute before
-                           running the test.
---after=PATH               Specifies a command line script to execute after
-                           running the test.
-`, { version: require('../package.json').version }));
-
-let driver: WebDriver;
-
+/**
+ * resolve a relative string path to the current working directory.
+ */
 const resolve = (str: string) =>
     path.isAbsolute(str) ? str : path.resolve(process.cwd(), str);
+
+/**
+ * resolveAll resolves each path in the list provided.
+ */
+const resolveAll = (list: string[]) => list.map(resolve);
 
 const executeScript = (driver: WebDriver, script: string, args: Value[] = []) =>
     doFuture(function*() {
@@ -181,10 +188,10 @@ const checkResult = (result: ScriptResult): Future<ScriptResult> =>
         raise<ScriptResult>(new Error(`Test failed: ${result.message} `)) :
         pure<ScriptResult>(result);
 
-const execScripts = (scripts: string[] = []) =>
+const execScripts = (scripts: string[] = [], args: string[] = []) =>
     sequential(scripts.map(target => fromCallback(cb => {
 
-        execFile(resolve(target), [options.test], (err, stdout, stderr) => {
+        execFile(resolve(target), args, (err, stdout, stderr) => {
 
             if (stdout) console.log(stdout);
 
@@ -196,10 +203,60 @@ const execScripts = (scripts: string[] = []) =>
 
     })));
 
-const onError = (e: Error) => {
+/**
+ * runTest executes a single test given a test configuration spec.
+ */
+const runTest = (conf: TestConf) => doFuture(function*() {
 
-    console.error(`An error occured while executing tests for ` +
-        `"${options.url}": ${os.EOL} ${e.message} `);
+    let driver = yield getDriver(conf.browser);
+
+    yield liftP(() => driver.get(conf.url));
+
+    if (conf.injectMocha) {
+
+        let js = yield readTextFile(FILE_MOCHA_JS);
+        yield executeScript(driver, js);
+
+    }
+
+    yield executeAsyncScript(driver, SCRIPT_SETUP);
+
+    yield execScripts(resolveAll(conf.before), [conf.path]);
+
+    let script = yield readTextFile(resolve(conf.path));
+
+    yield executeScript(driver, script);
+
+    let result: json.Object = yield executeAsyncScript(driver, SCRIPT_RUN);
+
+    if (isObject(result)) {
+
+        if (result.type === 'error') {
+
+            yield onError(conf, new Error(<string>result.message));
+
+        } else {
+
+            yield onSuccess(result);
+
+        }
+
+    }
+
+    return onFinish(driver, conf);
+
+});
+
+const getDriver = (browser: string) => liftP(() =>
+    new Builder()
+        .forBrowser(browser)
+        .build()
+);
+
+const onError = (conf: TestConf, e: Error) => {
+
+    console.error(`An error occured while executing test "${conf.path}"` +
+        `against url "${conf.url}": ${os.EOL} ${e.message} `);
 
     return raise<void>(e);
 
@@ -214,47 +271,92 @@ const onSuccess = (result: ScriptResult) => {
 
 }
 
-const onFinish = () => doFuture(function*() {
+const onFinish = (driver: WebDriver, conf: TestConf) => doFuture(function*() {
 
-    if ((driver != null) && !(options.keepOpen))
+    if ((driver != null) && !(conf.keepOpen))
         yield liftP(() => driver.quit());
 
-    yield execScripts(options.after);
+    yield execScripts(conf.after);
 
     return pure(<void>undefined);
 
 });
 
-const main = () => doFuture<ScriptResult>(function*() {
+/**
+ * runTestsFromFile given a path to a crapaud config file, will run the tests
+ * declared within.
+ */
+const runTestsFromFile = (path: string) => doFuture(function*() {
 
-    driver = yield liftP(() =>
-        new Builder().forBrowser(options.browser).build());
+    let obj = yield readJSONFile(resolve(path));
 
-    yield liftP(() => driver.get(options.url));
+    let result = testSuiteConfCheck(obj);
 
-    if (options.injectMocha) {
+    if (result.isLeft()) {
 
-        let js = yield readTextFile(FILE_MOCHA_JS);
-        yield executeScript(driver, js);
+        let msgs = result.takeLeft().explain(errorTemplates);
+        return <Future<void[]>>raise(new Error(JSON.stringify(msgs)));
+
+    } else {
+
+        let conf = result.takeRight();
+        return sequential(conf.tests.map(t => runTest(t)));
 
     }
 
-    yield executeAsyncScript(driver, SCRIPT_SETUP);
+});
 
-    yield execScripts(options.before);
+/**
+ * testConfCheck validates a single object as a TestConf.
+ */
+const testConfCheck: Precondition<json.Value, TestConf> =
+    and(isRecord, restrict({
 
-    let script = yield readTextFile(resolve(options.test));
+        path: <Precondition<json.Value, json.Value>>isString,
 
-    yield executeScript(driver, script);
+        browser: <Precondition<json.Value, json.Value>>isString,
 
-    let result = yield executeAsyncScript(driver, SCRIPT_RUN);
+        url: <Precondition<json.Value, json.Value>>isString,
 
-    return pure(<ScriptResult>result);
+        injectMocha: <Precondition<json.Value, json.Value>>isBoolean,
+
+        before: <Precondition<json.Value, json.Value>>and(isArray, arrayMap(isString))
+
+    }));
+
+/**
+ * testSuiteConfCheck validates an entire test suite object.
+ */
+const testSuiteConfCheck: Precondition<json.Value, TestSuiteConf> =
+    and(isRecord, restrict({
+
+        tests: <Precondition<json.Value, json.Value>>arrayMap(testConfCheck)
+
+    }));
+
+const main = (options: CLIOptions) => doFuture(function*() {
+
+    return runTestsFromFile(options.path);
 
 });
 
-main()
-    .chain(onSuccess)
-    .catch(onError)
-    .finally(onFinish)
-    .fork();
+const BIN = path.basename(__filename);
+
+const defaultCLIOptions = (args: Object): CLIOptions => ({
+
+    path: <string>args['<path>']
+
+});
+
+const cliOptions: CLIOptions = defaultCLIOptions(docopt.docopt(`
+Usage:
+   ${BIN} <path>
+
+Thet path is a path to a crapaud.json file that tests will be executed from.
+
+Options:
+-h --help                  Show this screen.
+--version                  Show the version of ${BIN}.
+`, { version: require('../package.json').version }));
+
+main(cliOptions).fork(console.error);

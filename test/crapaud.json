@@ -1,0 +1,24 @@
+{
+
+    "tests": [
+
+        {
+            "path": "test/pass_test.js",
+
+            "browser": "firefox",
+
+            "url": "http://localhost:8080",
+
+            "injectMocha": true,
+
+            "before": ["test/before.sh"],
+
+            "after": ["test/after.sh"],
+
+            "keepOpen": true
+
+        }
+
+    ]
+
+    }
