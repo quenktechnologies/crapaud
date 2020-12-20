@@ -27,6 +27,7 @@ import { isString } from '@quenk/preconditions/lib/string';
 import { isBoolean } from '@quenk/preconditions/lib/boolean';
 import { isRecord, restrict } from '@quenk/preconditions/lib/record';
 import { isArray, map as arrayMap } from '@quenk/preconditions/lib/array';
+import { merge } from '@quenk/noni/lib/data/record';
 
 type ScriptResult = json.Object | void;
 
@@ -39,6 +40,50 @@ interface CLIOptions {
      * path to the test suite config file.
      */
     path: string
+
+}
+
+/**
+ * TestSuiteConf contains configuration info for a group of tests.
+ */
+interface TestSuiteConf extends json.Object {
+
+    /**
+     * browser to run the tests in.
+     */
+    browser: string,
+
+    /**
+     * url the web browser will visit and inject tests in.
+     */
+    url: string,
+
+    /**
+     * injectMocha if true, will inject a mochajs script into the url's web 
+     * page.
+     */
+    injectMocha: boolean,
+
+    /**
+     * before is a list of script paths to execute before testing.
+     */
+    before: string[],
+
+    /**
+     * after is a list of script paths to execute after testing.
+     */
+    after: string[],
+
+    /**
+     * keepOpen if true will attempt to leave the browser window open after 
+     * a test completes.
+     */
+    keepOpen: boolean,
+
+    /**
+     * tests to execute in this suite.
+     */
+    tests: TestConf[]
 
 }
 
@@ -86,17 +131,6 @@ interface TestConf extends json.Object {
 
 }
 
-/**
- * TestSuiteConf contains configuration info for a group of tests.
- */
-interface TestSuiteConf extends json.Object {
-
-    /**
-     * tests to execute in this suite.
-     */
-    tests: TestConf[]
-
-}
 
 const FILE_MOCHA_JS = path.resolve(__dirname, '../vendor/mocha/mocha.js');
 
@@ -139,7 +173,25 @@ const SCRIPT_RUN = `
 
 const errorTemplates = {
 
-};
+}
+
+const defaultTestSuite: TestSuiteConf = {
+
+    browser: 'firefox',
+
+    url: 'http://localhost:8080',
+
+    injectMocha: true,
+
+    before: [],
+
+    after: [],
+
+    keepOpen: false,
+
+    tests: []
+
+}
 
 /**
  * readJSONFile reads the contents of a file as JSON.
@@ -203,6 +255,30 @@ const execScripts = (scripts: string[] = [], args: string[] = []) =>
 
     })));
 
+const runTestSuite = (conf: TestSuiteConf) => doFuture(function*() {
+
+    yield execScripts(resolveAll(conf.before));
+
+    yield sequential(conf.tests.map(t => runTest(inheritSuiteConf(conf, t))));
+
+    yield execScripts(resolveAll(conf.after));
+
+    return pure(undefined);
+
+});
+
+const inheritedProps = ['browser', 'url', 'injectMocha', 'keepOpen'];
+
+const inheritSuiteConf = (conf: TestSuiteConf, test: TestConf) =>
+    inheritedProps.reduce((test, prop) => {
+
+        if (!test.hasOwnProperty(prop))
+            test[prop] = conf[prop];
+
+        return test;
+
+    }, test);
+
 /**
  * runTest executes a single test given a test configuration spec.
  */
@@ -231,15 +307,10 @@ const runTest = (conf: TestConf) => doFuture(function*() {
 
     if (isObject(result)) {
 
-        if (result.type === 'error') {
-
+        if (result.type === 'error')
             yield onError(conf, new Error(<string>result.message));
-
-        } else {
-
+        else
             yield onSuccess(result);
-
-        }
 
     }
 
@@ -273,7 +344,7 @@ const onSuccess = (result: ScriptResult) => {
 
 const onFinish = (driver: WebDriver, conf: TestConf) => doFuture(function*() {
 
-    if ((driver != null) && !(conf.keepOpen))
+    if ((driver != null) && !conf.keepOpen)
         yield liftP(() => driver.quit());
 
     yield execScripts(conf.after);
@@ -283,33 +354,9 @@ const onFinish = (driver: WebDriver, conf: TestConf) => doFuture(function*() {
 });
 
 /**
- * runTestsFromFile given a path to a crapaud config file, will run the tests
- * declared within.
+ * validateTestConf validates a single object as a TestConf.
  */
-const runTestsFromFile = (path: string) => doFuture(function*() {
-
-    let obj = yield readJSONFile(resolve(path));
-
-    let result = testSuiteConfCheck(obj);
-
-    if (result.isLeft()) {
-
-        let msgs = result.takeLeft().explain(errorTemplates);
-        return <Future<void[]>>raise(new Error(JSON.stringify(msgs)));
-
-    } else {
-
-        let conf = result.takeRight();
-        return sequential(conf.tests.map(t => runTest(t)));
-
-    }
-
-});
-
-/**
- * testConfCheck validates a single object as a TestConf.
- */
-const testConfCheck: Precondition<json.Value, TestConf> =
+const validateTestConf: Precondition<json.Value, TestConf> =
     and(isRecord, restrict({
 
         path: <Precondition<json.Value, json.Value>>isString,
@@ -320,23 +367,88 @@ const testConfCheck: Precondition<json.Value, TestConf> =
 
         injectMocha: <Precondition<json.Value, json.Value>>isBoolean,
 
-        before: <Precondition<json.Value, json.Value>>and(isArray, arrayMap(isString))
+        before: <Precondition<json.Value, json.Value>>and(isArray,
+            arrayMap(isString)),
+
+        after: <Precondition<json.Value, json.Value>>and(isArray,
+            arrayMap(isString))
 
     }));
 
 /**
- * testSuiteConfCheck validates an entire test suite object.
+ * validateTestSuiteConf validates an entire test suite object.
  */
-const testSuiteConfCheck: Precondition<json.Value, TestSuiteConf> =
+const validateTestSuiteConf: Precondition<json.Value, TestSuiteConf> =
     and(isRecord, restrict({
 
-        tests: <Precondition<json.Value, json.Value>>arrayMap(testConfCheck)
+        browser: <Precondition<json.Value, json.Value>>isString,
+
+        url: <Precondition<json.Value, json.Value>>isString,
+
+        injectMocha: <Precondition<json.Value, json.Value>>isBoolean,
+
+        before: <Precondition<json.Value, json.Value>>and(isArray,
+            arrayMap(isString)),
+
+        after: <Precondition<json.Value, json.Value>>and(isArray,
+            arrayMap(isString)),
+
+        tests: <Precondition<json.Value, json.Value>>arrayMap(validateTestConf)
 
     }));
 
+/**
+ * readTestSuiteFile reads a TestSuiteConf at a file path, initializing any
+ * unspecified values to their defaults.
+ *
+ * This will also validate the object before it is returned.
+ */
+const readTestSuiteFile = (path: string): Future<TestSuiteConf> =>
+    doFuture(function*() {
+
+        let result = yield readJSONFile(resolve(path));
+
+        if (result.isLeft()) {
+
+            let msg = result.takeLeft().message;
+
+            let err = new Error(
+                `Error encountered while reading "${path}": \n ${msg}`
+            );
+
+            return raise<TestSuiteConf>(err);
+
+        }
+
+        let obj = result.takeRight();
+
+        if (!isObject(obj)) {
+
+            let err = new Error(`Test file is at "${path}" is invalid!`);
+            return raise<TestSuiteConf>(err);
+
+        }
+
+        let testResult = validateTestSuiteConf(merge(defaultTestSuite, obj));
+
+        if (testResult.isLeft()) {
+
+            let msgs = testResult.takeLeft().explain(errorTemplates);
+            return raise<TestSuiteConf>(new Error(JSON.stringify(msgs)));
+
+        }
+
+        return pure(testResult.takeRight());
+
+    });
+
 const main = (options: CLIOptions) => doFuture(function*() {
 
-    return runTestsFromFile(options.path);
+    let conf = yield readTestSuiteFile(options.path);
+
+    yield runTestSuite(conf);
+
+    return pure(<void>undefined);
 
 });
 
@@ -350,13 +462,13 @@ const defaultCLIOptions = (args: Object): CLIOptions => ({
 
 const cliOptions: CLIOptions = defaultCLIOptions(docopt.docopt(`
 Usage:
-   ${BIN} <path>
+${BIN} <path>
 
-Thet path is a path to a crapaud.json file that tests will be executed from.
+The path is a path to a crapaud.json file that tests will be executed from.
 
 Options:
--h --help                  Show this screen.
---version                  Show the version of ${BIN}.
+-h--help                  Show this screen.
+--version                 Show the version of ${BIN}.
 `, { version: require('../package.json').version }));
 
 main(cliOptions).fork(console.error);
