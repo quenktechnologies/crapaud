@@ -7,7 +7,7 @@ import {
     pure
 } from '@quenk/noni/lib/control/monad/future';
 import { fromCallback } from '@quenk/noni/lib/control/monad/future';
-import { isFile } from '@quenk/noni/lib/io/file';
+import { isFile, readTextFile } from '@quenk/noni/lib/io/file';
 
 import { assert } from '@quenk/test/lib/assert';
 
@@ -101,9 +101,32 @@ describe('main', () => {
 
             });
 
-            //  yield rm(beforeFile);
+            yield rm(beforeFile);
 
-            //yield rm(afterFile);
+            yield rm(afterFile);
+
+            return pure(<void>undefined);
+
+        })));
+
+    it('should execute beforeEach and afterEach scripts',
+        () => toPromise(doFuture(function*() {
+
+            let counterFile = `${__dirname}/beforeEach-afterEach/counter`;
+
+            yield rm(counterFile);
+
+            yield main([`${__dirname}/beforeEach-afterEach/crapaud.json`]);
+
+            let counter = yield readTextFile(counterFile);
+
+            yield attempt(() => {
+
+                assert(counter.trim()).equal('6');
+
+            });
+
+            yield rm(counterFile);
 
             return pure(<void>undefined);
 

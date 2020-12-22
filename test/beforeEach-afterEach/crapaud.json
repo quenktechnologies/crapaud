@@ -1,0 +1,41 @@
+{
+
+    "beforeEach": ["script.sh"],
+
+    "afterEach": ["script.sh"],
+
+    "tests": [{
+            "path": "test.js",
+
+            "browser": "chrome",
+
+            "url": "http://localhost:8080",
+
+            "injectMocha": true
+
+        },
+
+        {
+            "path": "test.js",
+
+            "browser": "chrome",
+
+            "url": "http://localhost:8080",
+
+            "injectMocha": true
+
+        },
+
+        {
+            "path": "test.js",
+
+            "browser": "chrome",
+
+            "url": "http://localhost:8080",
+
+            "injectMocha": true
+
+        }
+
+    ]
+}

@@ -77,9 +77,19 @@ interface TestSuiteConf extends json.Object {
     before: string[],
 
     /**
+     * beforeEach is a list of script paths to execute before each test.
+     */
+    beforeEach: string[],
+
+    /**
      * after is a list of script paths to execute after testing.
      */
     after: string[],
+
+    /**
+     * afterEach is a list of script paths to execute after each test.
+     */
+    afterEach: string[],
 
     /**
      * keepOpen if true will attempt to leave the browser window open after 
@@ -138,7 +148,6 @@ interface TestConf extends json.Object {
 
 }
 
-
 const FILE_MOCHA_JS = path.resolve(__dirname, '../vendor/mocha/mocha.js');
 
 const SCRIPT_SETUP = `
@@ -194,14 +203,17 @@ const defaultTestSuite: TestSuiteConf = {
 
     before: [],
 
+    beforeEach: [],
+
     after: [],
+
+    afterEach: [],
 
     keepOpen: false,
 
     tests: []
 
 }
-
 
 /**
  * readJSONFile reads the contents of a file as JSON.
@@ -253,7 +265,6 @@ const checkResult = (result: ScriptResult): Future<ScriptResult> =>
 
 const execScripts = (scripts: string[] = [], args: string[] = []) =>
     sequential(scripts.map(target => fromCallback(cb => {
-console.error('exec file ',   target );
         execFile(resolve(target), args, (err, stdout, stderr) => {
 
             if (stdout) console.log(stdout);
@@ -271,7 +282,10 @@ const runTestSuite = (conf: TestSuiteConf) => doFuture(function*() {
     yield execScripts(resolveAll(conf.before, path.dirname(conf.path)));
 
     yield sequential(conf.tests.map(t =>
-        runTest(expandTestPath(conf, inheritSuiteConf(conf, t)))));
+        runTest(expandTestPath(conf,
+            inheritScripts(conf,
+                inheritSuiteConf(conf, t))))
+    ));
 
     yield execScripts(resolveAll(conf.after, path.dirname(conf.path)));
 
@@ -290,6 +304,14 @@ const inheritSuiteConf = (conf: TestSuiteConf, test: TestConf) =>
         return test;
 
     }, test);
+
+const inheritScripts = (conf: TestSuiteConf, test: TestConf) => {
+
+    test.before = conf.beforeEach.concat(test.before);
+    test.after = conf.afterEach.concat(test.after);
+    return test;
+
+}
 
 const expandTestPath = (conf: TestSuiteConf, test: TestConf) => {
 
@@ -412,7 +434,13 @@ const validateTestSuiteConf: Precondition<json.Value, TestSuiteConf> =
         before: <Precondition<json.Value, json.Value>>and(isArray,
             arrayMap(isString)),
 
+        beforeEach: <Precondition<json.Value, json.Value>>and(isArray,
+            arrayMap(isString)),
+
         after: <Precondition<json.Value, json.Value>>and(isArray,
+            arrayMap(isString)),
+
+        afterEach: <Precondition<json.Value, json.Value>>and(isArray,
             arrayMap(isString)),
 
         tests: <Precondition<json.Value, json.Value>>arrayMap(validateTestConf)
