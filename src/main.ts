@@ -49,6 +49,13 @@ interface CLIOptions {
 interface TestSuiteConf extends json.Object {
 
     /**
+     * path to the test suite config file.
+     *
+     * This is computed automatically.
+     */
+    path: string,
+
+    /**
      * browser to run the tests in.
      */
     browser: string,
@@ -177,6 +184,8 @@ const errorTemplates = {
 
 const defaultTestSuite: TestSuiteConf = {
 
+    path: process.cwd(),
+
     browser: 'firefox',
 
     url: 'http://localhost:8080',
@@ -193,6 +202,7 @@ const defaultTestSuite: TestSuiteConf = {
 
 }
 
+
 /**
  * readJSONFile reads the contents of a file as JSON.
  */
@@ -208,13 +218,14 @@ const readJSONFile = (path: string): Future<json.Object> =>
 /**
  * resolve a relative string path to the current working directory.
  */
-const resolve = (str: string) =>
-    path.isAbsolute(str) ? str : path.resolve(process.cwd(), str);
+const resolve = (str: string, cwd = process.cwd()) =>
+    path.isAbsolute(str) ? str : path.resolve(cwd, str);
 
 /**
  * resolveAll resolves each path in the list provided.
  */
-const resolveAll = (list: string[]) => list.map(resolve);
+const resolveAll = (list: string[], cwd = process.cwd()) =>
+    list.map(p => resolve(p, cwd));
 
 const executeScript = (driver: WebDriver, script: string, args: Value[] = []) =>
     doFuture(function*() {
@@ -242,7 +253,7 @@ const checkResult = (result: ScriptResult): Future<ScriptResult> =>
 
 const execScripts = (scripts: string[] = [], args: string[] = []) =>
     sequential(scripts.map(target => fromCallback(cb => {
-
+console.error('exec file ',   target );
         execFile(resolve(target), args, (err, stdout, stderr) => {
 
             if (stdout) console.log(stdout);
@@ -257,11 +268,12 @@ const execScripts = (scripts: string[] = [], args: string[] = []) =>
 
 const runTestSuite = (conf: TestSuiteConf) => doFuture(function*() {
 
-    yield execScripts(resolveAll(conf.before));
+    yield execScripts(resolveAll(conf.before, path.dirname(conf.path)));
 
-    yield sequential(conf.tests.map(t => runTest(inheritSuiteConf(conf, t))));
+    yield sequential(conf.tests.map(t =>
+        runTest(expandTestPath(conf, inheritSuiteConf(conf, t)))));
 
-    yield execScripts(resolveAll(conf.after));
+    yield execScripts(resolveAll(conf.after, path.dirname(conf.path)));
 
     return pure(undefined);
 
@@ -278,6 +290,13 @@ const inheritSuiteConf = (conf: TestSuiteConf, test: TestConf) =>
         return test;
 
     }, test);
+
+const expandTestPath = (conf: TestSuiteConf, test: TestConf) => {
+
+    test.path = resolve(test.path, path.dirname(conf.path));
+    return test;
+
+}
 
 /**
  * runTest executes a single test given a test configuration spec.
@@ -297,7 +316,8 @@ const runTest = (conf: TestConf) => doFuture(function*() {
 
     yield executeAsyncScript(driver, SCRIPT_SETUP);
 
-    yield execScripts(resolveAll(conf.before), [conf.path]);
+    yield execScripts(resolveAll(conf.before, path.dirname(conf.path)),
+        [conf.path]);
 
     let script = yield readTextFile(resolve(conf.path));
 
@@ -344,10 +364,10 @@ const onSuccess = (result: ScriptResult) => {
 
 const onFinish = (driver: WebDriver, conf: TestConf) => doFuture(function*() {
 
-    if ((driver != null) && !conf.keepOpen)
+    if (!conf.keepOpen)
         yield liftP(() => driver.quit());
 
-    yield execScripts(conf.after);
+    yield execScripts(resolveAll(conf.after, path.dirname(conf.path)));
 
     return pure(<void>undefined);
 
@@ -381,6 +401,8 @@ const validateTestConf: Precondition<json.Value, TestConf> =
 const validateTestSuiteConf: Precondition<json.Value, TestSuiteConf> =
     and(isRecord, restrict({
 
+        path: <Precondition<json.Value, json.Value>>isString,
+
         browser: <Precondition<json.Value, json.Value>>isString,
 
         url: <Precondition<json.Value, json.Value>>isString,
@@ -406,21 +428,7 @@ const validateTestSuiteConf: Precondition<json.Value, TestSuiteConf> =
 const readTestSuiteFile = (path: string): Future<TestSuiteConf> =>
     doFuture(function*() {
 
-        let result = yield readJSONFile(resolve(path));
-
-        if (result.isLeft()) {
-
-            let msg = result.takeLeft().message;
-
-            let err = new Error(
-                `Error encountered while reading "${path}": \n ${msg}`
-            );
-
-            return raise<TestSuiteConf>(err);
-
-        }
-
-        let obj = result.takeRight();
+        let obj: json.Object = yield readJSONFile(path);
 
         if (!isObject(obj)) {
 
@@ -429,7 +437,14 @@ const readTestSuiteFile = (path: string): Future<TestSuiteConf> =>
 
         }
 
-        let testResult = validateTestSuiteConf(merge(defaultTestSuite, obj));
+        obj.path = path;
+
+        let suite = merge(defaultTestSuite, obj);
+
+        suite.tests = suite.tests.map(t =>
+            isObject(t) ? merge(defaultTestSuite, t) : t);
+
+        let testResult = validateTestSuiteConf(suite);
 
         if (testResult.isLeft()) {
 
@@ -444,7 +459,7 @@ const readTestSuiteFile = (path: string): Future<TestSuiteConf> =>
 
 const main = (options: CLIOptions) => doFuture(function*() {
 
-    let conf = yield readTestSuiteFile(options.path);
+    let conf = yield readTestSuiteFile(resolve(options.path));
 
     yield runTestSuite(conf);
 
@@ -462,7 +477,7 @@ const defaultCLIOptions = (args: Object): CLIOptions => ({
 
 const cliOptions: CLIOptions = defaultCLIOptions(docopt.docopt(`
 Usage:
-${BIN} <path>
+  ${BIN} <path>
 
 The path is a path to a crapaud.json file that tests will be executed from.
 
