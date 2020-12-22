@@ -14,9 +14,11 @@
   "author": "Quenk Technologies Limited <info@quenk.com> (http://quenk.com)",
   "license": "Apache-2.0",
   "devDependencies": {
+    "@quenk/test": "^2.3.0",
+    "@types/mocha": "^8.2.0",
     "@types/node": "^14.14.2",
-    "mocha": "^7.1.2",
-    "ts-node": "^8.9.1",
+    "mocha": "^7.2.0",
+    "ts-node": "^8.10.2",
     "typescript": "^4.0.3"
   },
   "dependencies": {
