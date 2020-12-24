@@ -3,9 +3,10 @@
 import * as path from 'path';
 import * as os from 'os';
 import * as docopt from 'docopt';
+import * as stream from 'stream';
 import * as json from '@quenk/noni/lib/data/json';
 
-import { execFile } from 'child_process';
+import { execFile as _execFile } from 'child_process';
 import { Builder, WebDriver } from 'selenium-webdriver';
 
 import {
@@ -22,7 +23,7 @@ import { readTextFile } from '@quenk/noni/lib/io/file';
 import { Value, Object } from '@quenk/noni/lib/data/json';
 import { isObject } from '@quenk/noni/lib/data/type';
 
-import { and, Precondition } from '@quenk/preconditions';
+import { Precondition, and, optional } from '@quenk/preconditions';
 import { isString } from '@quenk/preconditions/lib/string';
 import { isBoolean } from '@quenk/preconditions/lib/boolean';
 import { isRecord, restrict } from '@quenk/preconditions/lib/record';
@@ -92,6 +93,11 @@ interface TestSuiteConf extends json.Object {
     afterEach: string[],
 
     /**
+     * transform for the test.
+     */
+    transform?: string,
+
+    /**
      * keepOpen if true will attempt to leave the browser window open after 
      * a test completes.
      */
@@ -140,6 +146,12 @@ interface TestConf extends json.Object {
      * after is a list of script paths to execute after the test.
      */
     after: string[],
+
+    /**
+     * transform if specified, is a path to a script that each test will be
+     * piped to before injection.
+     */
+    transform?: string,
 
     /**
      * keepOpen if true will attempt to leave the browser open after testing.
@@ -263,19 +275,19 @@ const checkResult = (result: ScriptResult): Future<ScriptResult> =>
         raise<ScriptResult>(new Error(`Test failed: ${result.message} `)) :
         pure<ScriptResult>(result);
 
+const execFile = (path: string, args: string[] = []) => fromCallback(cb =>
+    _execFile(path, args, (err, stdout, stderr) => {
+
+        if (stdout) console.log(stdout);
+
+        if (stderr) console.error(stderr);
+
+        cb(err);
+
+    }));
+
 const execScripts = (scripts: string[] = [], args: string[] = []) =>
-    sequential(scripts.map(target => fromCallback(cb => {
-        execFile(resolve(target), args, (err, stdout, stderr) => {
-
-            if (stdout) console.log(stdout);
-
-            if (stderr) console.error(stderr);
-
-            cb(err);
-
-        });
-
-    })));
+    sequential(scripts.map(target => execFile(target, args)));
 
 const runTestSuite = (conf: TestSuiteConf) => doFuture(function*() {
 
@@ -293,7 +305,13 @@ const runTestSuite = (conf: TestSuiteConf) => doFuture(function*() {
 
 });
 
-const inheritedProps = ['browser', 'url', 'injectMocha', 'keepOpen'];
+const inheritedProps = [
+    'browser',
+    'url',
+    'injectMocha',
+    'transform',
+    'keepOpen'
+];
 
 const inheritSuiteConf = (conf: TestSuiteConf, test: TestConf) =>
     inheritedProps.reduce((test, prop) => {
@@ -327,21 +345,32 @@ const runTest = (conf: TestConf) => doFuture(function*() {
 
     let driver = yield getDriver(conf.browser);
 
+    let cwd = path.dirname(conf.path);
+
     yield liftP(() => driver.get(conf.url));
 
     if (conf.injectMocha) {
 
         let js = yield readTextFile(FILE_MOCHA_JS);
+
         yield executeScript(driver, js);
 
     }
 
     yield executeAsyncScript(driver, SCRIPT_SETUP);
 
-    yield execScripts(resolveAll(conf.before, path.dirname(conf.path)),
-        [conf.path]);
+    yield execScripts(resolveAll(conf.before, cwd), [conf.path]);
 
-    let script = yield readTextFile(resolve(conf.path));
+    let scriptPath = resolve(conf.path);
+
+    let script = yield readTextFile(scriptPath);
+
+    if (conf.transform)
+        script = yield transformScript(
+            resolve(conf.transform, path.dirname(scriptPath)),
+            scriptPath,
+            script
+        );
 
     yield executeScript(driver, script);
 
@@ -365,6 +394,16 @@ const getDriver = (browser: string) => liftP(() =>
         .forBrowser(browser)
         .build()
 );
+
+const transformScript = (cliPath: string, jsPath: string, jsTxt: string) =>
+    fromCallback<string>(cb => {
+
+        let proc = _execFile(cliPath, [jsPath], cb);
+        let stdin = <stream.Writable>proc.stdin;
+        stdin.write(jsTxt);
+        stdin.end();
+
+    });
 
 const onError = (conf: TestConf, e: Error) => {
 
@@ -413,7 +452,9 @@ const validateTestConf: Precondition<json.Value, TestConf> =
             arrayMap(isString)),
 
         after: <Precondition<json.Value, json.Value>>and(isArray,
-            arrayMap(isString))
+            arrayMap(isString)),
+
+        transform: <Precondition<json.Value, json.Value>>optional(isString)
 
     }));
 
@@ -443,9 +484,31 @@ const validateTestSuiteConf: Precondition<json.Value, TestSuiteConf> =
         afterEach: <Precondition<json.Value, json.Value>>and(isArray,
             arrayMap(isString)),
 
+        transform: <Precondition<json.Value, json.Value>>optional(isString),
+
         tests: <Precondition<json.Value, json.Value>>arrayMap(validateTestConf)
 
     }));
+
+const expandTargets = ['beforeEach', 'afterEach', 'transform'];
+
+const expandScriptPaths = (conf: TestSuiteConf, path: string) => {
+
+    expandTargets.forEach(key => {
+
+        let target = conf[key];
+
+        if (!target) return;
+
+        conf[key] = Array.isArray(target) ?
+            target.map(str => resolve(<string>str, path)) :
+            resolve(<string>target, path);
+
+    });
+
+    return conf;
+
+}
 
 /**
  * readTestSuiteFile reads a TestSuiteConf at a file path, initializing any
@@ -453,19 +516,19 @@ const validateTestSuiteConf: Precondition<json.Value, TestSuiteConf> =
  *
  * This will also validate the object before it is returned.
  */
-const readTestSuiteFile = (path: string): Future<TestSuiteConf> =>
+const readTestSuiteFile = (filePath: string): Future<TestSuiteConf> =>
     doFuture(function*() {
 
-        let obj: json.Object = yield readJSONFile(path);
+        let obj: json.Object = yield readJSONFile(filePath);
 
         if (!isObject(obj)) {
 
-            let err = new Error(`Test file is at "${path}" is invalid!`);
+            let err = new Error(`Test file is at "${filePath}" is invalid!`);
             return raise<TestSuiteConf>(err);
 
         }
 
-        obj.path = path;
+        obj.path = filePath;
 
         let suite = merge(defaultTestSuite, obj);
 
@@ -481,7 +544,8 @@ const readTestSuiteFile = (path: string): Future<TestSuiteConf> =>
 
         }
 
-        return pure(testResult.takeRight());
+        return pure(expandScriptPaths(testResult.takeRight(),
+            path.dirname(filePath)));
 
     });
 

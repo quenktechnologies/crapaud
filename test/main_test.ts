@@ -132,4 +132,12 @@ describe('main', () => {
 
         })));
 
+    it('should execute transform scripts',
+        () => toPromise(doFuture(function*() {
+
+            yield main([`${__dirname}/transform/crapaud.json`]);
+            return pure(<void>undefined);
+
+        })));
+
 });

@@ -43,6 +43,8 @@ This file must be a valid json object with the following structure:
 |              | (optional).                                                       |
 | tests        | And array of tests to be executed, see the table below for more   |
 |              | info.                                                             |
+| transform    | A path to a script who each test will be piped to before          |
+|              | execution.                                                        |
 |              |                                                                   |
 
 Tests inherit some of their properties from the top level of the file, however the
@@ -52,15 +54,17 @@ Each test can be configured as follows:
 |  Property    | Description |
 |--------------|-------------|
 | path         | The path to the test file to inject.                              |
-| browser      | Same as top level propery.                                        |
-| url          | Same as top level propery.                                        |
-| injectMocha  | Same as top level propery.                                        |
+| browser      | Same as top level property.                                       |
+| url          | Same as top level property.                                       |
+| injectMocha  | Same as top level property.                                       |
 | before       | An array of relative paths to scripts that will be executed before|
 |              | tests are run (not inherited).                                    |
 | after        | An array of relative paths to scripts that will be executed after |
 |              | tests are run (not inherited).                                    |
 | keepOpen     | Same as top level propery.                                        |
-|              |                                                                   |
+| transform    | A path to a script which the test contents will be piped to       |
+|              | before execution.                                                 |
+|              |                                                  |
 
 ## License
 
