@@ -19,7 +19,7 @@ import {
     raise,
     attempt
 } from '@quenk/noni/lib/control/monad/future';
-import { readTextFile } from '@quenk/noni/lib/io/file';
+import { isDirectory, readTextFile } from '@quenk/noni/lib/io/file';
 import { Value, Object } from '@quenk/noni/lib/data/json';
 import { isObject } from '@quenk/noni/lib/data/type';
 
@@ -518,6 +518,14 @@ const expandScriptPaths = (conf: TestSuiteConf, path: string) => {
  */
 const readTestSuiteFile = (filePath: string): Future<TestSuiteConf> =>
     doFuture(function*() {
+
+        let yes = yield isDirectory(filePath);
+
+        if (yes) {
+
+            filePath = path.join(filePath, 'crapaud.json');
+
+        }
 
         let obj: json.Object = yield readJSONFile(filePath);
 

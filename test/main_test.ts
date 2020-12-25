@@ -140,4 +140,10 @@ describe('main', () => {
 
         })));
 
+    it('should detect directories', () => toPromise(doFuture(function*() {
+
+        return main([`${__dirname}/should-work`]);
+
+    })));
+
 });
