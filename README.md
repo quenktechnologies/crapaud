@@ -44,7 +44,9 @@ This file must be a valid json object with the following structure:
 | tests        | And array of tests to be executed, see the table below for more   |
 |              | info.                                                             |
 | transform    | A path to a script who each test will be piped to before          |
-|              | execution.                                                        |
+|              | execution (optional).                                             |
+| include      | An array of paths to other suite configuration files that will be |
+|              | executed after this one (optional).                               |
 |              |                                                                   |
 
 Tests inherit some of their properties from the top level of the file, however the

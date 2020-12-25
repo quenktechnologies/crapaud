@@ -17,18 +17,20 @@ import {
     liftP,
     pure,
     raise,
-    attempt
+    attempt,
+    batch
 } from '@quenk/noni/lib/control/monad/future';
 import { isDirectory, readTextFile } from '@quenk/noni/lib/io/file';
 import { Value, Object } from '@quenk/noni/lib/data/json';
 import { isObject } from '@quenk/noni/lib/data/type';
+import { merge } from '@quenk/noni/lib/data/record';
+import { distribute, flatten } from '@quenk/noni/lib/data/array';
 
 import { Precondition, and, optional } from '@quenk/preconditions';
 import { isString } from '@quenk/preconditions/lib/string';
 import { isBoolean } from '@quenk/preconditions/lib/boolean';
 import { isRecord, restrict } from '@quenk/preconditions/lib/record';
 import { isArray, map as arrayMap } from '@quenk/preconditions/lib/array';
-import { merge } from '@quenk/noni/lib/data/record';
 
 type ScriptResult = json.Object | void;
 
@@ -106,7 +108,12 @@ interface TestSuiteConf extends json.Object {
     /**
      * tests to execute in this suite.
      */
-    tests: TestConf[]
+    tests: TestConf[],
+
+    /**
+     * include is a list of other TestSuiteConfs to execute after this one.
+     */
+    include: string[]
 
 }
 
@@ -223,7 +230,9 @@ const defaultTestSuite: TestSuiteConf = {
 
     keepOpen: false,
 
-    tests: []
+    tests: [],
+
+    include: []
 
 }
 
@@ -400,6 +409,7 @@ const transformScript = (cliPath: string, jsPath: string, jsTxt: string) =>
 
         let proc = _execFile(cliPath, [jsPath], cb);
         let stdin = <stream.Writable>proc.stdin;
+
         stdin.write(jsTxt);
         stdin.end();
 
@@ -486,7 +496,11 @@ const validateTestSuiteConf: Precondition<json.Value, TestSuiteConf> =
 
         transform: <Precondition<json.Value, json.Value>>optional(isString),
 
-        tests: <Precondition<json.Value, json.Value>>arrayMap(validateTestConf)
+        tests: <Precondition<json.Value, json.Value>>and(isArray,
+            arrayMap(validateTestConf)),
+
+        include: <Precondition<json.Value, json.Value>>and(isArray,
+            arrayMap(isString))
 
     }));
 
@@ -557,11 +571,32 @@ const readTestSuiteFile = (filePath: string): Future<TestSuiteConf> =>
 
     });
 
+/**
+ * readTestSuiteFileDeep takes care of reading a TestSuiteConf and any
+ * includes recursively.
+ *
+ * TODO: This function should be made stack safe at some point.
+ */
+const readTestSuiteFileDeep = (filePath: string): Future<TestSuiteConf[]> =>
+    doFuture(function*() {
+
+        let conf = yield readTestSuiteFile(filePath);
+
+        let work: Future<TestSuiteConf>[] = conf.include.map((i: string) =>
+            readTestSuiteFileDeep(resolve(i, path.dirname(filePath))));
+
+        let results = yield batch(distribute(work, 50));
+
+        return pure([conf, ...flatten(results)]);
+
+    });
+
 const main = (options: CLIOptions) => doFuture(function*() {
 
-    let conf = yield readTestSuiteFile(resolve(options.path));
+    let confs: TestSuiteConf[] =
+        yield readTestSuiteFileDeep(resolve(options.path));
 
-    yield runTestSuite(conf);
+    yield sequential(confs.map(conf => runTestSuite(conf)));
 
     return pure(<void>undefined);
 

@@ -22,7 +22,7 @@
     "typescript": "^4.0.3"
   },
   "dependencies": {
-    "@quenk/noni": "^1.40.7",
+    "@quenk/noni": "^1.40.14",
     "@quenk/preconditions": "^5.5.0",
     "@types/docopt": "^0.6.31",
     "@types/selenium-webdriver": "^4.0.9",

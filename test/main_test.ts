@@ -146,4 +146,27 @@ describe('main', () => {
 
     })));
 
+    it('should run included suites',
+        () => toPromise(doFuture(function*() {
+
+            let counterFile = `${__dirname}/beforeEach-afterEach/counter`;
+
+            yield rm(counterFile);
+
+            yield main([`${__dirname}/include/crapaud.json`]);
+
+            let counter = yield readTextFile(counterFile);
+
+            yield attempt(() => {
+
+                assert(counter.trim()).equal('6');
+
+            });
+
+            yield rm(counterFile);
+
+            return pure(<void>undefined);
+
+        })));
+
 });
