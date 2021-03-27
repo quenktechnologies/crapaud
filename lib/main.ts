@@ -20,19 +20,37 @@ import {
     attempt,
     batch
 } from '@quenk/noni/lib/control/monad/future';
-import { isDirectory, readTextFile } from '@quenk/noni/lib/io/file';
+import { isDirectory, isFile, Path, readTextFile } from '@quenk/noni/lib/io/file';
 import { Value, Object } from '@quenk/noni/lib/data/json';
-import { isObject } from '@quenk/noni/lib/data/type';
+import { isObject, isString as isStringType } from '@quenk/noni/lib/data/type';
 import { merge } from '@quenk/noni/lib/data/record';
 import { distribute, flatten } from '@quenk/noni/lib/data/array';
 
-import { Precondition, and, optional } from '@quenk/preconditions';
+import { Precondition, and, optional, or } from '@quenk/preconditions';
 import { isString } from '@quenk/preconditions/lib/string';
 import { isBoolean } from '@quenk/preconditions/lib/boolean';
+import { isFunction } from '@quenk/preconditions/lib/function';
 import { isRecord, restrict } from '@quenk/preconditions/lib/record';
 import { isArray, map as arrayMap } from '@quenk/preconditions/lib/array';
 
 type ScriptResult = json.Object | void;
+
+type ScriptFunc = (
+    conf: TestConf,
+    suite: TestSuiteConf,
+    driver: WebDriver) => Future<void>
+
+type ScriptSpec
+    = string
+    | ScriptFunc
+    ;
+
+type ConfValue
+    = json.Value
+    | Function
+    | ConfObject
+    | ConfValue[]
+    ;
 
 /**
  * CLIOptions received from the terminal.
@@ -47,9 +65,20 @@ interface CLIOptions {
 }
 
 /**
+ * ConfObject is the parent interface of the suite and test conf objects.
+ *
+ * This is a mix of a json object that can also contain functions.
+ */
+interface ConfObject {
+
+    [key: string]: ConfValue
+
+}
+
+/**
  * TestSuiteConf contains configuration info for a group of tests.
  */
-interface TestSuiteConf extends json.Object {
+interface TestSuiteConf extends ConfObject {
 
     /**
      * path to the test suite config file.
@@ -77,22 +106,22 @@ interface TestSuiteConf extends json.Object {
     /**
      * before is a list of script paths to execute before testing.
      */
-    before: string[],
+    before: Path[],
 
     /**
      * beforeEach is a list of script paths to execute before each test.
      */
-    beforeEach: string[],
+    beforeEach: ScriptSpec[],
 
     /**
      * after is a list of script paths to execute after testing.
      */
-    after: string[],
+    after: Path[],
 
     /**
      * afterEach is a list of script paths to execute after each test.
      */
-    afterEach: string[],
+    afterEach: ScriptSpec[],
 
     /**
      * transform for the test.
@@ -121,7 +150,7 @@ interface TestSuiteConf extends json.Object {
  * TestConf contains the configuration information needed to execute a single
  * test.
  */
-interface TestConf extends json.Object {
+interface TestConf extends ConfObject {
 
     /*
      * path to the test file.
@@ -147,12 +176,12 @@ interface TestConf extends json.Object {
     /**
      * before is a list of script paths to execute before the test.
      */
-    before: string[],
+    before: ScriptSpec[],
 
     /**
      * after is a list of script paths to execute after the test.
      */
-    after: string[],
+    after: ScriptSpec[],
 
     /**
      * transform if specified, is a path to a script that each test will be
@@ -206,9 +235,7 @@ const SCRIPT_RUN = `
     });
 `;
 
-const errorTemplates = {
-
-}
+const errorTemplates = {}
 
 const defaultTestSuite: TestSuiteConf = {
 
@@ -243,10 +270,15 @@ const readJSONFile = (path: string): Future<json.Object> =>
     doFuture(function*() {
 
         let txt = yield readTextFile(path);
-
         return attempt(() => JSON.parse(txt));
 
     })
+
+/**
+ * readFile reads the contents of a js file.
+ */
+const readJSFile = (path: string): Future<json.Object> =>
+    attempt(() => require(path));
 
 /**
  * resolve a relative string path to the current working directory.
@@ -260,15 +292,16 @@ const resolve = (str: string, cwd = process.cwd()) =>
 const resolveAll = (list: string[], cwd = process.cwd()) =>
     list.map(p => resolve(p, cwd));
 
-const executeScript = (driver: WebDriver, script: string, args: Value[] = []) =>
-    doFuture(function*() {
+const execDriverScript =
+    (driver: WebDriver, script: string, args: Value[] = []) =>
+        doFuture(function*() {
 
-        let result = yield liftP(() => driver.executeScript(script, ...args));
-        return checkResult(result);
+            let result = yield liftP(() => driver.executeScript(script, ...args));
+            return checkResult(result);
 
-    });
+        });
 
-const executeAsyncScript =
+const execAsyncDriverScript =
     (driver: WebDriver, script: string, args: Value[] = []) =>
         doFuture(function*() {
 
@@ -295,24 +328,39 @@ const execFile = (path: string, args: string[] = []) => fromCallback(cb =>
 
     }));
 
-const execScripts = (scripts: string[] = [], args: string[] = []) =>
+const execCLIScripts = (scripts: Path[] = [], args: string[] = []) =>
     sequential(scripts.map(target => execFile(target, args)));
 
-const runTestSuite = (conf: TestSuiteConf) => doFuture(function*() {
+const execBeforeScripts =
+    (driver: WebDriver, conf: TestConf, args: string[] = []) =>
+        execSpecScripts(driver, conf, conf.before, args);
 
-    yield execScripts(resolveAll(conf.before, path.dirname(conf.path)));
+const execAfterScripts =
+    (driver: WebDriver, conf: TestConf, args: string[] = []) =>
+        execSpecScripts(driver, conf, conf.after, args);
 
-    yield sequential(conf.tests.map(t =>
-        runTest(expandTestPath(conf,
-            inheritScripts(conf,
-                inheritSuiteConf(conf, t))))
-    ));
+const execSpecScripts =
+    (driver: WebDriver, conf: TestConf, scripts: ScriptSpec[], args: string[] = []) =>
+        sequential(scripts.map(script => isStringType(script) ?
+            execFile(resolve(script, path.dirname(conf.path)), args) :
+            (<Function>script)(driver, conf)))
 
-    yield execScripts(resolveAll(conf.after, path.dirname(conf.path)));
+const runTestSuite = (conf: TestSuiteConf) =>
+    doFuture(function*() {
 
-    return pure(undefined);
+        yield execCLIScripts(resolveAll(conf.before, path.dirname(conf.path)));
 
-});
+        yield sequential(conf.tests.map(t =>
+            runTest(expandTestPath(conf,
+                inheritScripts(conf,
+                    inheritSuiteConf(conf, t))))
+        ));
+
+        yield execCLIScripts(resolveAll(conf.after, path.dirname(conf.path)));
+
+        return pure(undefined);
+
+    });
 
 const inheritedProps = [
     'browser',
@@ -326,7 +374,7 @@ const inheritSuiteConf = (conf: TestSuiteConf, test: TestConf) =>
     inheritedProps.reduce((test, prop) => {
 
         if (!test.hasOwnProperty(prop))
-            test[prop] = conf[prop];
+            test[prop] = (<json.Object><object>conf)[prop];
 
         return test;
 
@@ -354,36 +402,34 @@ const runTest = (conf: TestConf) => doFuture(function*() {
 
     let driver = yield getDriver(conf.browser);
 
-    let cwd = path.dirname(conf.path);
-
     yield liftP(() => driver.get(conf.url));
 
     if (conf.injectMocha) {
 
         let js = yield readTextFile(FILE_MOCHA_JS);
 
-        yield executeScript(driver, js);
+        yield execDriverScript(driver, js);
 
     }
 
-    yield executeAsyncScript(driver, SCRIPT_SETUP);
+    yield execAsyncDriverScript(driver, SCRIPT_SETUP);
 
-    yield execScripts(resolveAll(conf.before, cwd), [conf.path]);
+    yield execBeforeScripts(driver, conf, [conf.path]);
 
     let scriptPath = resolve(conf.path);
 
     let script = yield readTextFile(scriptPath);
 
     if (conf.transform)
-        script = yield transformScript(
+        script = yield execTransformScript(
             resolve(conf.transform, path.dirname(scriptPath)),
             scriptPath,
             script
         );
 
-    yield executeScript(driver, script);
+    yield execDriverScript(driver, script);
 
-    let result: json.Object = yield executeAsyncScript(driver, SCRIPT_RUN);
+    let result: json.Object = yield execAsyncDriverScript(driver, SCRIPT_RUN);
 
     if (isObject(result)) {
 
@@ -404,7 +450,7 @@ const getDriver = (browser: string) => liftP(() =>
         .build()
 );
 
-const transformScript = (cliPath: string, jsPath: string, jsTxt: string) =>
+const execTransformScript = (cliPath: string, jsPath: string, jsTxt: string) =>
     fromCallback<string>(cb => {
 
         let proc = _execFile(cliPath, [jsPath], cb);
@@ -438,7 +484,7 @@ const onFinish = (driver: WebDriver, conf: TestConf) => doFuture(function*() {
     if (!conf.keepOpen)
         yield liftP(() => driver.quit());
 
-    yield execScripts(resolveAll(conf.after, path.dirname(conf.path)));
+    yield execAfterScripts(driver, conf, [conf.path]);
 
     return pure(<void>undefined);
 
@@ -447,75 +493,76 @@ const onFinish = (driver: WebDriver, conf: TestConf) => doFuture(function*() {
 /**
  * validateTestConf validates a single object as a TestConf.
  */
-const validateTestConf: Precondition<json.Value, TestConf> =
+const validateTestConf: Precondition<ConfValue, TestConf> =
     and(isRecord, restrict({
 
-        path: <Precondition<json.Value, json.Value>>isString,
+        path: <Precondition<ConfValue, ConfValue>>isString,
 
-        browser: <Precondition<json.Value, json.Value>>isString,
+        browser: <Precondition<ConfValue, ConfValue>>isString,
 
-        url: <Precondition<json.Value, json.Value>>isString,
+        url: <Precondition<ConfValue, ConfValue>>isString,
 
-        injectMocha: <Precondition<json.Value, json.Value>>isBoolean,
+        injectMocha: <Precondition<ConfValue, ConfValue>>isBoolean,
 
-        before: <Precondition<json.Value, json.Value>>and(isArray,
-            arrayMap(isString)),
+        before: <Precondition<ConfValue, ConfValue>>and(isArray,
+            arrayMap(or<ConfValue, ConfValue>(isString, isFunction))),
 
-        after: <Precondition<json.Value, json.Value>>and(isArray,
-            arrayMap(isString)),
+        after: <Precondition<ConfValue, ConfValue>>and(isArray,
+            arrayMap(or<ConfValue, ConfValue>(isString, isFunction))),
 
-        transform: <Precondition<json.Value, json.Value>>optional(isString)
+        transform: <Precondition<ConfValue, ConfValue>>optional(isString)
 
     }));
 
 /**
  * validateTestSuiteConf validates an entire test suite object.
  */
-const validateTestSuiteConf: Precondition<json.Value, TestSuiteConf> =
+const validateTestSuiteConf: Precondition<ConfValue, TestSuiteConf> =
     and(isRecord, restrict({
 
-        path: <Precondition<json.Value, json.Value>>isString,
+        path: <Precondition<ConfValue, ConfValue>>isString,
 
-        browser: <Precondition<json.Value, json.Value>>isString,
+        browser: <Precondition<ConfValue, ConfValue>>isString,
 
-        url: <Precondition<json.Value, json.Value>>isString,
+        url: <Precondition<ConfValue, ConfValue>>isString,
 
-        injectMocha: <Precondition<json.Value, json.Value>>isBoolean,
+        injectMocha: <Precondition<ConfValue, ConfValue>>isBoolean,
 
-        before: <Precondition<json.Value, json.Value>>and(isArray,
+        before: <Precondition<ConfValue, ConfValue>>and(isArray,
             arrayMap(isString)),
 
-        beforeEach: <Precondition<json.Value, json.Value>>and(isArray,
+        beforeEach: <Precondition<ConfValue, ConfValue>>and(isArray,
+            arrayMap(or<ConfValue, ConfValue>(isString, isFunction))),
+
+        after: <Precondition<ConfValue, ConfValue>>and(isArray,
             arrayMap(isString)),
 
-        after: <Precondition<json.Value, json.Value>>and(isArray,
-            arrayMap(isString)),
+        afterEach: <Precondition<ConfValue, ConfValue>>and(isArray,
+            arrayMap(or<ConfValue, ConfValue>(isString, isFunction))),
 
-        afterEach: <Precondition<json.Value, json.Value>>and(isArray,
-            arrayMap(isString)),
+        transform: <Precondition<ConfValue, ConfValue>>optional(isString),
 
-        transform: <Precondition<json.Value, json.Value>>optional(isString),
-
-        tests: <Precondition<json.Value, json.Value>>and(isArray,
+        tests: <Precondition<ConfValue, ConfValue>>and(isArray,
             arrayMap(validateTestConf)),
 
-        include: <Precondition<json.Value, json.Value>>and(isArray,
+        include: <Precondition<ConfValue, ConfValue>>and(isArray,
             arrayMap(isString))
 
     }));
 
 const expandTargets = ['beforeEach', 'afterEach', 'transform'];
 
-const expandScriptPaths = (conf: TestSuiteConf, path: string) => {
+const expandScriptPaths = (conf: TestSuiteConf, path: Path) => {
 
     expandTargets.forEach(key => {
 
-        let target = conf[key];
+        let target = <ScriptSpec[]>conf[key];
 
         if (!target) return;
 
         conf[key] = Array.isArray(target) ?
-            target.map(str => resolve(<string>str, path)) :
+            target.map(spec =>
+                isStringType(spec) ? resolve(spec, path) : spec) :
             resolve(<string>target, path);
 
     });
@@ -537,15 +584,21 @@ const readTestSuiteFile = (filePath: string): Future<TestSuiteConf> =>
 
         if (yes) {
 
-            filePath = path.join(filePath, 'crapaud.json');
+            let jsFilePath = path.join(filePath, 'crapaud.js');
+
+            filePath = (yield isFile(jsFilePath)) ?
+                jsFilePath :
+                path.join(filePath, 'crapaud.json');
 
         }
 
-        let obj: json.Object = yield readJSONFile(filePath);
+        let obj: TestSuiteConf = filePath.endsWith('.js') ?
+            yield readJSFile(filePath) :
+            yield readJSONFile(filePath);
 
         if (!isObject(obj)) {
 
-            let err = new Error(`Test file is at "${filePath}" is invalid!`);
+            let err = new Error(`Test file at "${filePath}" is invalid!`);
             return raise<TestSuiteConf>(err);
 
         }
