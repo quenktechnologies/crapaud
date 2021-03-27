@@ -43,6 +43,12 @@ describe('main', () => {
 
     })));
 
+    it('should work with js conf files', () => toPromise(doFuture(function*() {
+
+        return main([`${__dirname}/should-work-with-js/crapaud.js`]);
+
+    })));
+
     it('should execute before and after scripts',
         () => toPromise(doFuture(function*() {
 
@@ -131,6 +137,40 @@ describe('main', () => {
             return pure(<void>undefined);
 
         })));
+
+    it('should execute before and after functions',
+        () => toPromise(doFuture(function*() {
+
+            let beforeFile = `${__dirname}/before-after-functions/BEFORE`;
+
+            let afterFile = `${__dirname}/before-after-functions/AFTER`;
+
+            yield rm(beforeFile);
+
+            yield rm(afterFile);
+
+            yield main([`${__dirname}/before-after-functions/crapaud.js`]);
+
+            let before = yield readTextFile(beforeFile);
+
+            let after = yield readTextFile(afterFile);
+
+            yield attempt(() => {
+
+                assert(before).equal('before');
+
+                assert(after).equal('after');
+
+            });
+
+            yield rm(beforeFile);
+
+            yield rm(afterFile);
+
+            return pure(<void>undefined);
+
+        })));
+
 
     it('should execute transform scripts',
         () => toPromise(doFuture(function*() {

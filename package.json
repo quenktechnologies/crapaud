@@ -11,6 +11,9 @@
     "lib",
     "vendor"
   ],
+  "scripts": {
+   "test": "./node_modules/.bin/mocha $(find test -name *_test.ts)"
+  },
   "author": "Quenk Technologies Limited <info@quenk.com> (http://quenk.com)",
   "license": "Apache-2.0",
   "devDependencies": {
