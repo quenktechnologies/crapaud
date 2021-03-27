@@ -1,5 +1,13 @@
 # Crapaud Changelog
 
+## [0.4.0] - 2021-03-27
+
+### Changed
+  - Conf files can now be js. They will be parsed via `require()` instead of 
+    `JSON.parse`.
+  - The test level before and after scripts can now be a function that will be
+    called instead. See `ScriptFunc` for details.
+
 ## [0.3.0] - 2020-12-24
 
 ### Added
