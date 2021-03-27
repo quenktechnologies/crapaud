@@ -35,10 +35,7 @@ import { isArray, map as arrayMap } from '@quenk/preconditions/lib/array';
 
 type ScriptResult = json.Object | void;
 
-type ScriptFunc = (
-    conf: TestConf,
-    suite: TestSuiteConf,
-    driver: WebDriver) => Future<void>
+type ScriptFunc = (driver: WebDriver, conf: TestConf)    => Future<void>
 
 type ScriptSpec
     = string
