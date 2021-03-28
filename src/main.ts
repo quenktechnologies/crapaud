@@ -38,8 +38,15 @@ type ScriptResult = json.Object | void;
 type ScriptFunc = (driver: WebDriver, conf: TestConf) => Future<void>
 
 type ScriptSpec
-    = string
+    = Path
     | ScriptFunc
+    ;
+
+type TransformScript = (conf: TestConf, src: string) => Future<string>
+
+type TransformSpec
+    = Path
+    | TransformScript
     ;
 
 type ConfValue
@@ -57,7 +64,7 @@ interface CLIOptions {
     /**
      * path to the test suite config file.
      */
-    path: string
+    path: Path
 
 }
 
@@ -82,7 +89,7 @@ interface TestSuiteConf extends ConfObject {
      *
      * This is computed automatically.
      */
-    path: string,
+    path: Path,
 
     /**
      * browser to run the tests in.
@@ -123,7 +130,7 @@ interface TestSuiteConf extends ConfObject {
     /**
      * transform for the test.
      */
-    transform?: string,
+    transform?: TransformSpec,
 
     /**
      * keepOpen if true will attempt to leave the browser window open after 
@@ -139,7 +146,7 @@ interface TestSuiteConf extends ConfObject {
     /**
      * include is a list of other TestSuiteConfs to execute after this one.
      */
-    include: string[]
+    include: Path[]
 
 }
 
@@ -152,7 +159,7 @@ interface TestConf extends ConfObject {
     /*
      * path to the test file.
      */
-    path: string,
+    path: Path,
 
     /**
      * browser to run the test in.
@@ -184,7 +191,7 @@ interface TestConf extends ConfObject {
      * transform if specified, is a path to a script that each test will be
      * piped to before injection.
      */
-    transform?: string,
+    transform?: TransformSpec,
 
     /**
      * keepOpen if true will attempt to leave the browser open after testing.
@@ -418,11 +425,7 @@ const runTest = (conf: TestConf) => doFuture(function*() {
     let script = yield readTextFile(scriptPath);
 
     if (conf.transform)
-        script = yield execTransformScript(
-            resolve(conf.transform, path.dirname(scriptPath)),
-            scriptPath,
-            script
-        );
+        script = yield execTransformScript(conf, conf.transform, script);
 
     yield execDriverScript(driver, script);
 
@@ -447,16 +450,20 @@ const getDriver = (browser: string) => liftP(() =>
         .build()
 );
 
-const execTransformScript = (cliPath: string, jsPath: string, jsTxt: string) =>
-    fromCallback<string>(cb => {
+const execTransformScript =
+    (conf: TestConf, trans: TransformSpec, src: string) =>
+        isStringType(trans) ?
+            fromCallback<string>(cb => {
 
-        let proc = _execFile(cliPath, [jsPath], cb);
-        let stdin = <stream.Writable>proc.stdin;
+                let cliPath = resolve(trans, path.dirname(conf.path));
+                let proc = _execFile(cliPath, [conf.path], cb);
+                let stdin = <stream.Writable>proc.stdin;
+                stdin.write(src);
+                stdin.end();
 
-        stdin.write(jsTxt);
-        stdin.end();
+            }) :
+            trans(conf, src);
 
-    });
 
 const onError = (conf: TestConf, e: Error) => {
 
@@ -507,7 +514,8 @@ const validateTestConf: Precondition<ConfValue, TestConf> =
         after: <Precondition<ConfValue, ConfValue>>and(isArray,
             arrayMap(or<ConfValue, ConfValue>(isString, isFunction))),
 
-        transform: <Precondition<ConfValue, ConfValue>>optional(isString)
+        transform: <Precondition<ConfValue, ConfValue>>optional(
+        or<ConfValue,ConfValue>(isString,isFunction))
 
     }));
 
@@ -537,7 +545,8 @@ const validateTestSuiteConf: Precondition<ConfValue, TestSuiteConf> =
         afterEach: <Precondition<ConfValue, ConfValue>>and(isArray,
             arrayMap(or<ConfValue, ConfValue>(isString, isFunction))),
 
-        transform: <Precondition<ConfValue, ConfValue>>optional(isString),
+                transform: <Precondition<ConfValue, ConfValue>>optional(
+        or<ConfValue,ConfValue>(isString,isFunction)),
 
         tests: <Precondition<ConfValue, ConfValue>>and(isArray,
             arrayMap(validateTestConf)),

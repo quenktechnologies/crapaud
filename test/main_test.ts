@@ -180,6 +180,14 @@ describe('main', () => {
 
         })));
 
+    it('should execute transform functions',
+        () => toPromise(doFuture(function*() {
+
+            yield main([`${__dirname}/transform-func/crapaud.js`]);
+            return pure(<void>undefined);
+
+        })));
+
     it('should detect directories', () => toPromise(doFuture(function*() {
 
         return main([`${__dirname}/should-work`]);
