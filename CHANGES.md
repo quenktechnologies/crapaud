@@ -1,5 +1,10 @@
 # Crapaud Changelog
 
+## [0.5.0] - 2021-03-28
+
+### Changed
+  - Transform can now be a function.
+
 ## [0.4.0] - 2021-03-27
 
 ### Changed
