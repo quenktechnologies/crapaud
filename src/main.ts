@@ -35,7 +35,7 @@ import { isArray, map as arrayMap } from '@quenk/preconditions/lib/array';
 
 type ScriptResult = json.Object | void;
 
-type ScriptFunc = (driver: WebDriver, conf: TestConf)    => Future<void>
+type ScriptFunc = (driver: WebDriver, conf: TestConf) => Future<void>
 
 type ScriptSpec
     = string
@@ -399,6 +399,8 @@ const runTest = (conf: TestConf) => doFuture(function*() {
 
     let driver = yield getDriver(conf.browser);
 
+    yield execBeforeScripts(driver, conf, [conf.path]);
+
     yield liftP(() => driver.get(conf.url));
 
     if (conf.injectMocha) {
@@ -410,8 +412,6 @@ const runTest = (conf: TestConf) => doFuture(function*() {
     }
 
     yield execAsyncDriverScript(driver, SCRIPT_SETUP);
-
-    yield execBeforeScripts(driver, conf, [conf.path]);
 
     let scriptPath = resolve(conf.path);
 
