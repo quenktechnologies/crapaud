@@ -569,7 +569,7 @@ const expandScriptPaths = (conf: TestSuiteConf, path: Path) => {
         conf[key] = Array.isArray(target) ?
             target.map(spec =>
                 isStringType(spec) ? resolve(spec, path) : spec) :
-            resolve(<string>target, path);
+           isStringType(target) ? resolve(target, path) : target;
 
     });
 
