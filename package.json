@@ -1,6 +1,6 @@
 {
   "name": "@quenk/crapaud",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Tool for running tests against Single Page Applications.",
   "main": "lib/main.js",
   "bin": {
