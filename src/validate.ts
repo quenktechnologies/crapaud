@@ -4,7 +4,7 @@ import { Precondition, and, optional, or } from '@quenk/preconditions';
 import { isString } from '@quenk/preconditions/lib/string';
 import { isBoolean } from '@quenk/preconditions/lib/boolean';
 import { isFunction } from '@quenk/preconditions/lib/function';
-import { isRecord, restrict } from '@quenk/preconditions/lib/record';
+import { intersect, isRecord, restrict } from '@quenk/preconditions/lib/record';
 import { isArray, map as arrayMap } from '@quenk/preconditions/lib/array';
 
 import { ConfValue, TestSuiteConf, TestConf } from './conf';
@@ -13,7 +13,7 @@ import { ConfValue, TestSuiteConf, TestConf } from './conf';
  * validateTestConf validates a single object as a TestConf.
  */
 export const validateTestConf: Precondition<ConfValue, TestConf> =
-    and(isRecord, restrict({
+    and(isRecord, intersect({
 
         path: <Precondition<ConfValue, ConfValue>>isString,
 
@@ -70,3 +70,4 @@ export const validateTestSuiteConf: Precondition<ConfValue, TestSuiteConf> =
             arrayMap(isString))
 
     }));
+

@@ -100,6 +100,14 @@ const defaultTestSuite: TestSuiteConf = {
 
 }
 
+const defaultTestConf: Partial<TestConf> = {
+
+    before: [],
+
+    after: []
+
+}
+
 const execCLIScripts = (scripts: Path[] = [], args: string[] = []) =>
     sequential(scripts.map(target => execFile(target, args)));
 
@@ -120,6 +128,11 @@ const execSpecScripts = (
         execFile(resolve(script, path.dirname(conf.path)), args) :
         (<Function>script)(driver, conf)))
 
+const expandTestConf = (parent: TestSuiteConf, conf: TestConf) =>
+    expandTestPath(parent,
+        inheritScripts(parent,
+            inheritSuiteConf(parent, merge(defaultTestConf, conf))));
+
 const inheritedProps = [
     'browser',
     'url',
@@ -139,18 +152,14 @@ const inheritSuiteConf = (conf: TestSuiteConf, test: TestConf) =>
     }, test);
 
 const inheritScripts = (conf: TestSuiteConf, test: TestConf) => {
-
     test.before = conf.beforeEach.concat(test.before);
     test.after = conf.afterEach.concat(test.after);
     return test;
-
 }
 
 const expandTestPath = (conf: TestSuiteConf, test: TestConf) => {
-
     test.path = resolve(test.path, path.dirname(conf.path));
     return test;
-
 }
 
 const execTransformScript =
@@ -197,9 +206,7 @@ const expandScriptPaths = (conf: TestSuiteConf, path: Path) => {
 export const readTestSuiteFile = (filePath: string): Future<TestSuiteConf> =>
     doFuture(function*() {
 
-        let yes = yield isDirectory(filePath);
-
-        if (yes) {
+        if (yield isDirectory(filePath)) {
 
             let jsFilePath = path.join(filePath, 'crapaud.js');
 
@@ -233,8 +240,13 @@ export const readTestSuiteFile = (filePath: string): Future<TestSuiteConf> =>
 
         }
 
-        return pure(expandScriptPaths(testResult.takeRight(),
-            path.dirname(filePath)));
+        let validSuite = expandScriptPaths(testResult.takeRight(),
+            path.dirname(filePath));
+
+        validSuite.tests = validSuite.tests.map(test =>
+            expandTestConf(validSuite, test));
+
+        return pure(validSuite);
 
     });
 
@@ -342,11 +354,7 @@ export const runTestSuite = (conf: TestSuiteConf) =>
 
         yield execCLIScripts(resolveAll(conf.before, path.dirname(conf.path)));
 
-        yield sequential(conf.tests.map(test =>
-            runTest(merge(defaultTestSuite, expandTestPath(conf,
-                inheritScripts(conf,
-                    inheritSuiteConf(conf, test)))))
-        ));
+        yield sequential(conf.tests.map(runTest));
 
         yield execCLIScripts(resolveAll(conf.after, path.dirname(conf.path)));
 
