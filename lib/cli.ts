@@ -28,9 +28,9 @@ import { isObject, isString as isStringType } from '@quenk/noni/lib/data/type';
 import { merge } from '@quenk/noni/lib/data/record';
 import { distribute, flatten } from '@quenk/noni/lib/data/array';
 
-import { readJSONFile, readJSFile, resolve, resolveAll, execFile } from './filesystem';
+import { readJSONFile, readJSFile, resolve, execFile } from './filesystem';
 import { validateTestSuiteConf } from './validate';
-import { TestSuiteConf, TestConf, ScriptSpec, TransformSpec } from './conf';
+import { TestSuiteConf, TestConf, ScriptSpec, TransformSpec, HookFunc } from './conf';
 import { execAsyncDriverScript, execDriverScript, getDriver, ScriptResult } from './driver';
 
 const FILE_MOCHA_JS = path.resolve(__dirname, '../vendor/mocha/mocha.js');
@@ -107,9 +107,6 @@ const defaultTestConf: Partial<TestConf> = {
     after: []
 
 }
-
-const execCLIScripts = (scripts: Path[] = [], args: string[] = []) =>
-    sequential(scripts.map(target => execFile(target, args)));
 
 const execBeforeScripts =
     (driver: WebDriver, conf: TestConf, args: string[] = []) =>
@@ -352,11 +349,11 @@ const onFinish = (driver: WebDriver, conf: TestConf) => doFuture(function*() {
 export const runTestSuite = (conf: TestSuiteConf) =>
     doFuture(function*() {
 
-        yield execCLIScripts(resolveAll(conf.before, path.dirname(conf.path)));
+        yield sequential((<HookFunc[]>conf.before).map(f => f(conf)));
 
         yield sequential(conf.tests.map(runTest));
 
-        yield execCLIScripts(resolveAll(conf.after, path.dirname(conf.path)));
+        yield sequential((<HookFunc[]>conf.after).map(f => f(conf)));
 
         return pure(undefined);
 

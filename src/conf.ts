@@ -1,7 +1,7 @@
 import * as json from '@quenk/noni/lib/data/json';
 
 import { execFile as _execFile } from 'child_process';
-import {  WebDriver } from 'selenium-webdriver';
+import { WebDriver } from 'selenium-webdriver';
 
 import {
     Future,
@@ -9,6 +9,10 @@ import {
 import { Path } from '@quenk/noni/lib/io/file';
 
 export type ScriptFunc = (driver: WebDriver, conf: TestConf) => Future<void>
+
+export type HookFunc = (conf: TestSuiteConf) => Future<void>
+
+  export type BeforeScriptSpec =  Path | HookFunc;
 
 export type ScriptSpec
     = Path
@@ -73,7 +77,7 @@ export interface TestSuiteConf extends ConfObject {
     /**
      * before is a list of script paths to execute before testing.
      */
-    before: Path[],
+    before: (Path | HookFunc)[],
 
     /**
      * beforeEach is a list of script paths to execute before each test.
@@ -83,7 +87,7 @@ export interface TestSuiteConf extends ConfObject {
     /**
      * after is a list of script paths to execute after testing.
      */
-    after: Path[],
+    after: (Path | HookFunc)[],
 
     /**
      * afterEach is a list of script paths to execute after each test.

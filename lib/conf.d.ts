@@ -3,6 +3,8 @@ import { WebDriver } from 'selenium-webdriver';
 import { Future } from '@quenk/noni/lib/control/monad/future';
 import { Path } from '@quenk/noni/lib/io/file';
 export declare type ScriptFunc = (driver: WebDriver, conf: TestConf) => Future<void>;
+export declare type HookFunc = (conf: TestSuiteConf) => Future<void>;
+export declare type BeforeScriptSpec = Path | HookFunc;
 export declare type ScriptSpec = Path | ScriptFunc;
 export declare type TransformScript = (conf: TestConf, path: Path, src: string) => Future<string>;
 export declare type TransformSpec = Path | TransformScript;
@@ -41,7 +43,7 @@ export interface TestSuiteConf extends ConfObject {
     /**
      * before is a list of script paths to execute before testing.
      */
-    before: Path[];
+    before: (Path | HookFunc)[];
     /**
      * beforeEach is a list of script paths to execute before each test.
      */
@@ -49,7 +51,7 @@ export interface TestSuiteConf extends ConfObject {
     /**
      * after is a list of script paths to execute after testing.
      */
-    after: Path[];
+    after: (Path | HookFunc)[];
     /**
      * afterEach is a list of script paths to execute after each test.
      */
