@@ -41,6 +41,10 @@ export interface TestSuiteConf extends ConfObject {
      */
     injectMocha: boolean;
     /**
+     * mochaOptions that will be stringified and injected into mocha.setup().
+     */
+    mochaOptions: ConfObject;
+    /**
      * before is a list of script paths to execute before testing.
      */
     before: (Path | HookFunc)[];
@@ -93,6 +97,10 @@ export interface TestConf extends ConfObject {
      * page.
      */
     injectMocha: boolean;
+    /**
+     * mochaOptions that will be stringified and injected into mocha.setup().
+     */
+    mochaOptions: ConfObject;
     /**
      * before is a list of script paths to execute before the test.
      */

@@ -29,6 +29,8 @@ export const validateTestConf: Precondition<ConfValue, TestConf> =
 
         injectMocha: <Precondition<ConfValue, ConfValue>>isBoolean,
 
+        mochaOptions: <Precondition<ConfValue, ConfValue>>optional(isRecord),
+
         before: <Precondition<ConfValue, ConfValue>>and(isArray,
             arrayMap(or<ConfValue, ConfValue>(isString, isFunction))),
 
@@ -41,8 +43,8 @@ export const validateTestConf: Precondition<ConfValue, TestConf> =
     }));
 
 const beforeScript2Func: Precondition<ConfValue, ConfValue> =
-    (spec: ConfValue) => 
-         succeed(_isString(spec) ? (conf: TestSuiteConf) =>
+    (spec: ConfValue) =>
+        succeed(_isString(spec) ? (conf: TestSuiteConf) =>
             execFile(resolve(<string>spec, path.dirname(conf.path))) :
             <HookFunc>spec);
 
@@ -59,6 +61,8 @@ export const validateTestSuiteConf: Precondition<ConfValue, TestSuiteConf> =
         url: <Precondition<ConfValue, ConfValue>>isString,
 
         injectMocha: <Precondition<ConfValue, ConfValue>>isBoolean,
+
+        mochaOptions: <Precondition<ConfValue, ConfValue>>optional(isRecord),
 
         before: <Precondition<ConfValue, ConfValue>>and(isArray,
             arrayMap(and<ConfValue, ConfValue, ConfValue>(

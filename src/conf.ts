@@ -12,7 +12,7 @@ export type ScriptFunc = (driver: WebDriver, conf: TestConf) => Future<void>
 
 export type HookFunc = (conf: TestSuiteConf) => Future<void>
 
-  export type BeforeScriptSpec =  Path | HookFunc;
+export type BeforeScriptSpec = Path | HookFunc;
 
 export type ScriptSpec
     = Path
@@ -73,6 +73,11 @@ export interface TestSuiteConf extends ConfObject {
      * page.
      */
     injectMocha: boolean,
+
+    /**
+     * mochaOptions that will be stringified and injected into mocha.setup().
+     */
+    mochaOptions: ConfObject,
 
     /**
      * before is a list of script paths to execute before testing.
@@ -143,6 +148,11 @@ export interface TestConf extends ConfObject {
      * page.
      */
     injectMocha: boolean,
+
+    /**
+     * mochaOptions that will be stringified and injected into mocha.setup().
+     */
+    mochaOptions: ConfObject,
 
     /**
      * before is a list of script paths to execute before the test.

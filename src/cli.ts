@@ -35,7 +35,7 @@ import { execAsyncDriverScript, execDriverScript, getDriver, ScriptResult } from
 
 const FILE_MOCHA_JS = path.resolve(__dirname, '../vendor/mocha/mocha.js');
 
-const SCRIPT_SETUP = `
+const setupScript = (conf: object = {}) => `
 
     window.testmeh = { log: console.log, buffer: [] };
 
@@ -51,7 +51,7 @@ const SCRIPT_SETUP = `
 
     try {
 
-        mocha.setup({ ui: 'bdd', color: true, reporter: 'spec' });
+        mocha.setup(${JSON.stringify(conf)});
         cb();
 
     } catch (e) {
@@ -74,6 +74,8 @@ const SCRIPT_RUN = `
 
 const errorTemplates = {}
 
+const defaultMochaOpts = { ui: 'bdd', color: true, reporter: 'spec' };
+
 const defaultTestSuite: TestSuiteConf = {
 
     path: process.cwd(),
@@ -83,6 +85,8 @@ const defaultTestSuite: TestSuiteConf = {
     url: 'http://localhost:8080',
 
     injectMocha: true,
+
+    mochaOptions: {},
 
     before: [],
 
@@ -134,6 +138,7 @@ const inheritedProps = [
     'browser',
     'url',
     'injectMocha',
+  'mochaOptions',
     'transform',
     'keepOpen'
 ];
@@ -287,7 +292,10 @@ const runTest = (conf: TestConf) => doFuture(function*() {
 
     }
 
-    yield execAsyncDriverScript(driver, SCRIPT_SETUP);
+    let mochaConf = merge(defaultMochaOpts, conf.mochaOptions ?
+        conf.mochaOptions : {});
+
+    yield execAsyncDriverScript(driver, setupScript(mochaConf));
 
     let scriptPath = resolve(conf.path);
 
