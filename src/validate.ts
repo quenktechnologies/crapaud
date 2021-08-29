@@ -1,8 +1,10 @@
 import * as path from 'path';
 
-import { execFile as _execFile } from 'child_process';
-
-import { isString as _isString } from '@quenk/noni/lib/data/type';
+import {
+    isString as _isString,
+    isObject as _isObject,
+    isFunction as _isFunction
+} from '@quenk/noni/lib/data/type';
 
 import { Precondition, and, optional, or } from '@quenk/preconditions';
 import { isString } from '@quenk/preconditions/lib/string';
@@ -12,8 +14,58 @@ import { intersect, isRecord, restrict } from '@quenk/preconditions/lib/record';
 import { isArray, map as arrayMap } from '@quenk/preconditions/lib/array';
 import { succeed } from '@quenk/preconditions/lib/result';
 
-import { execFile, resolve } from './filesystem';
-import { ConfValue, TestSuiteConf, TestConf, HookFunc } from './conf';
+import { execFile, spawn, resolve } from './filesystem';
+import { ConfValue, TestSuiteConf, TestConf, ScriptInfo } from './conf';
+
+const validateScriptInfo: Precondition<ConfValue, ConfValue> =
+    and(isRecord, intersect({
+
+        path: <Precondition<ConfValue, ConfValue>>isString,
+
+        background: <Precondition<ConfValue, ConfValue>>optional(isBoolean),
+
+    }));
+
+const scripts2Funcs: Precondition<ConfValue, ConfValue> =
+    (spec: ConfValue) => {
+
+        let scripts = Array.isArray(spec) ? spec : [spec];
+
+        return succeed(scripts.map(script => {
+
+            if (_isFunction(script)) {
+
+                return script;
+
+            } else if (_isString(script)) {
+
+                return (conf: TestSuiteConf) =>
+                    execFile(resolve(script, path.dirname(conf.path)));
+
+            } else if (_isObject(script)) {
+
+                let { path: scriptPath, background } = <ScriptInfo>script;
+
+                return (conf: TestSuiteConf) => {
+
+                    scriptPath = resolve(scriptPath, conf.path);
+
+                    return background ? spawn(scriptPath) : execFile(scriptPath);
+
+                }
+
+            }
+
+        }));
+
+    }
+
+const validateScriptSpec =
+    or(isString, or(isFunction, and(isRecord, validateScriptInfo)));
+
+const validateScriptSpecProp: Precondition<ConfValue, ConfValue> =
+    and(or(and(isArray, arrayMap(validateScriptSpec)), validateScriptSpec),
+        scripts2Funcs);
 
 /**
  * validateTestConf validates a single object as a TestConf.
@@ -31,22 +83,14 @@ export const validateTestConf: Precondition<ConfValue, TestConf> =
 
         mochaOptions: <Precondition<ConfValue, ConfValue>>optional(isRecord),
 
-        before: <Precondition<ConfValue, ConfValue>>and(isArray,
-            arrayMap(or<ConfValue, ConfValue>(isString, isFunction))),
+        before: validateScriptSpecProp,
 
-        after: <Precondition<ConfValue, ConfValue>>and(isArray,
-            arrayMap(or<ConfValue, ConfValue>(isString, isFunction))),
+        after: validateScriptSpecProp,
 
         transform: <Precondition<ConfValue, ConfValue>>optional(
             or<ConfValue, ConfValue>(isString, isFunction))
 
     }));
-
-const beforeScript2Func: Precondition<ConfValue, ConfValue> =
-    (spec: ConfValue) =>
-        succeed(_isString(spec) ? (conf: TestSuiteConf) =>
-            execFile(resolve(<string>spec, path.dirname(conf.path))) :
-            <HookFunc>spec);
 
 /**
  * validateTestSuiteConf validates an entire test suite object.
@@ -64,23 +108,13 @@ export const validateTestSuiteConf: Precondition<ConfValue, TestSuiteConf> =
 
         mochaOptions: <Precondition<ConfValue, ConfValue>>optional(isRecord),
 
-        before: <Precondition<ConfValue, ConfValue>>and(isArray,
-            arrayMap(and<ConfValue, ConfValue, ConfValue>(
-                or<ConfValue, ConfValue>(isString, isFunction),
-                beforeScript2Func
-            ))),
+        before: validateScriptSpecProp,
 
-        beforeEach: <Precondition<ConfValue, ConfValue>>and(isArray,
-            arrayMap(or<ConfValue, ConfValue>(isString, isFunction))),
+        beforeEach: validateScriptSpecProp,
 
-        after: <Precondition<ConfValue, ConfValue>>and(isArray,
-            arrayMap(and<ConfValue, ConfValue, ConfValue>(
-                or<ConfValue, ConfValue>(isString, isFunction),
-                beforeScript2Func
-            ))),
+        after: validateScriptSpecProp,
 
-        afterEach: <Precondition<ConfValue, ConfValue>>and(isArray,
-            arrayMap(or<ConfValue, ConfValue>(isString, isFunction))),
+        afterEach: validateScriptSpecProp,
 
         transform: <Precondition<ConfValue, ConfValue>>optional(
             or<ConfValue, ConfValue>(isString, isFunction)),
