@@ -28,7 +28,7 @@ import { isObject, isString as isStringType } from '@quenk/noni/lib/data/type';
 import { merge } from '@quenk/noni/lib/data/record';
 import { distribute, flatten } from '@quenk/noni/lib/data/array';
 
-import { readJSONFile, readJSFile, resolve, execFile } from './filesystem';
+import { readJSONFile, readJSFile, resolve } from './filesystem';
 import { validateTestSuiteConf } from './validate';
 import { TestSuiteConf, TestConf, ScriptSpec, TransformSpec, HookFunc } from './conf';
 import { execAsyncDriverScript, execDriverScript, getDriver, ScriptResult } from './driver';
@@ -121,13 +121,11 @@ const execAfterScripts =
         execSpecScripts(driver, conf, conf.after, args);
 
 const execSpecScripts = (
-    driver: WebDriver,
+    _driver: WebDriver,
     conf: TestConf,
     scripts: ScriptSpec[],
-    args: string[] = []) =>
-    sequential(scripts.map(script => isStringType(script) ?
-        execFile(resolve(script, path.dirname(conf.path)), args) :
-        (<Function>script)(driver, conf)))
+    _args: string[] = []) => 
+     sequential(scripts.map(script => (<Function>script)(conf)))
 
 const expandTestConf = (parent: TestSuiteConf, conf: TestConf) =>
     expandTestPath(parent,
@@ -138,7 +136,7 @@ const inheritedProps = [
     'browser',
     'url',
     'injectMocha',
-  'mochaOptions',
+    'mochaOptions',
     'transform',
     'keepOpen'
 ];

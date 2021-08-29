@@ -5,10 +5,23 @@ import { Path } from '@quenk/noni/lib/io/file';
 export declare type ScriptFunc = (driver: WebDriver, conf: TestConf) => Future<void>;
 export declare type HookFunc = (conf: TestSuiteConf) => Future<void>;
 export declare type BeforeScriptSpec = Path | HookFunc;
-export declare type ScriptSpec = Path | ScriptFunc;
+export declare type ScriptSpec = Path | ScriptFunc | ScriptInfo;
 export declare type TransformScript = (conf: TestConf, path: Path, src: string) => Future<string>;
 export declare type TransformSpec = Path | TransformScript;
 export declare type ConfValue = json.Value | Function | ConfObject | ConfValue[];
+/**
+ * ScriptInfo indicates info about a script and how it should be executed.
+ */
+export interface ScriptInfo extends ConfObject {
+    /**
+     * path to the script to execute.
+     */
+    path: Path;
+    /**
+     * background if true will cause spawn() to be used instead of execFile
+     */
+    background?: boolean;
+}
 /**
  * ConfObject is the parent interface of the suite and test conf objects.
  *

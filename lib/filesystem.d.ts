@@ -21,3 +21,7 @@ export declare const resolveAll: (list: string[], cwd?: string) => string[];
  * execFile
  */
 export declare const execFile: (path: string, args?: string[]) => Future<unknown>;
+/**
+ * spawn
+ */
+export declare const spawn: (path: string, args?: string[]) => void;
