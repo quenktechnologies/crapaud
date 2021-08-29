@@ -17,6 +17,7 @@ export type BeforeScriptSpec = Path | HookFunc;
 export type ScriptSpec
     = Path
     | ScriptFunc
+    | ScriptInfo
     ;
 
 export type TransformScript
@@ -34,6 +35,23 @@ export type ConfValue
     | ConfObject
     | ConfValue[]
     ;
+
+/**
+ * ScriptInfo indicates info about a script and how it should be executed.
+ */
+export interface ScriptInfo extends ConfObject{
+
+    /**
+     * path to the script to execute.
+     */
+    path: Path,
+
+    /**
+     * background if true will cause spawn() to be used instead of execFile
+     */
+    background?: boolean
+
+}
 
 /**
  * ConfObject is the parent interface of the suite and test conf objects.

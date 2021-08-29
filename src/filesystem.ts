@@ -3,7 +3,7 @@
 import * as path from 'path';
 import * as json from '@quenk/noni/lib/data/json';
 
-import { execFile as _execFile } from 'child_process';
+import { execFile as _execFile, spawn as _spawn } from 'child_process';
 
 import {
     Future,
@@ -46,13 +46,23 @@ export const resolveAll = (list: string[], cwd = process.cwd()) =>
  * execFile
  */
 export const execFile =
-    (path: string, args: string[] = []) => fromCallback(cb =>
-        _execFile(path, args, (err, stdout, stderr) => {
+    (path: string, args: string[] = []) => {console.error('execing file pa', path); 
+        return fromCallback(cb =>
+            _execFile(path, args, (err, stdout, stderr) => {
 
-            if (stdout) console.log(stdout);
+                if (stdout) console.log(stdout);
 
-            if (stderr) console.error(stderr);
+                if (stderr) console.error(stderr);
 
-            cb(err);
+                cb(err);
 
-        }));
+            }));
+}
+
+/**
+ * spawn
+ */
+export const spawn =
+    (path: string, args: string[] = []) => {
+        _spawn(path, args, { detached: true });
+    }
