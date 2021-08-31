@@ -1,10 +1,14 @@
 import * as path from 'path';
+import * as stream from 'stream';
+import * as cp from 'child_process';
 
+import { fromCallback } from '@quenk/noni/lib/control/monad/future';
 import {
     isString as _isString,
     isObject as _isObject,
     isFunction as _isFunction
 } from '@quenk/noni/lib/data/type';
+import { Path } from '@quenk/noni/lib/io/file';
 
 import { Precondition, and, optional, or } from '@quenk/preconditions';
 import { isString } from '@quenk/preconditions/lib/string';
@@ -14,8 +18,9 @@ import { intersect, isRecord, restrict } from '@quenk/preconditions/lib/record';
 import { isArray, map as arrayMap } from '@quenk/preconditions/lib/array';
 import { succeed } from '@quenk/preconditions/lib/result';
 
+import { TestSuiteConf } from './conf/test/suite';
+import { ConfValue, TestConf, ScriptInfo } from './conf/test';
 import { execFile, spawn, resolve } from './filesystem';
-import { ConfValue, TestSuiteConf, TestConf, ScriptInfo } from './conf';
 
 const validateScriptInfo: Precondition<ConfValue, ConfValue> =
     and(isRecord, intersect({
@@ -26,7 +31,7 @@ const validateScriptInfo: Precondition<ConfValue, ConfValue> =
 
     }));
 
-const scripts2Funcs: Precondition<ConfValue, ConfValue> =
+const beforeAfter2Funcs: Precondition<ConfValue, ConfValue> =
     (spec: ConfValue) => {
 
         let scripts = Array.isArray(spec) ? spec : [spec];
@@ -65,7 +70,44 @@ const validateScriptSpec =
 
 const validateScriptSpecProp: Precondition<ConfValue, ConfValue> =
     and(or(and(isArray, arrayMap(validateScriptSpec)), validateScriptSpec),
-        scripts2Funcs);
+        beforeAfter2Funcs);
+
+const transform2Funcs: Precondition<ConfValue, ConfValue> =
+    (spec: ConfValue) => {
+
+        let scripts = Array.isArray(spec) ? spec : [spec];
+
+        return succeed(scripts.map(script => {
+
+            if (_isFunction(script)) {
+
+                return script;
+
+            } else if (_isString(script)) {
+
+                return (conf: TestConf, txtPath: Path, txt: string) =>
+                    fromCallback<string>(cb => {
+
+                        let cliPath = resolve(script, path.dirname(conf.path));
+                        let proc = cp.execFile(cliPath, [conf.path,txtPath], cb);
+                        let stdin = <stream.Writable>proc.stdin;
+
+                        stdin.write(txt);
+                        stdin.end();
+
+                    });
+
+            }
+
+        }));
+
+    }
+
+const validateTransformSpec = or<ConfValue, ConfValue>(isString, isFunction);
+
+const validateTransformSpecProp: Precondition<ConfValue, ConfValue> =
+    and(or(and(isArray, arrayMap(validateTransformSpec)),
+        validateTransformSpec), transform2Funcs);
 
 /**
  * validateTestConf validates a single object as a TestConf.
@@ -87,8 +129,7 @@ export const validateTestConf: Precondition<ConfValue, TestConf> =
 
         after: validateScriptSpecProp,
 
-        transform: <Precondition<ConfValue, ConfValue>>optional(
-            or<ConfValue, ConfValue>(isString, isFunction))
+        transform: optional(validateTransformSpecProp),
 
     }));
 
@@ -116,8 +157,7 @@ export const validateTestSuiteConf: Precondition<ConfValue, TestSuiteConf> =
 
         afterEach: validateScriptSpecProp,
 
-        transform: <Precondition<ConfValue, ConfValue>>optional(
-            or<ConfValue, ConfValue>(isString, isFunction)),
+        transform: optional(validateTransformSpecProp),
 
         tests: <Precondition<ConfValue, ConfValue>>and(isArray,
             arrayMap(validateTestConf)),

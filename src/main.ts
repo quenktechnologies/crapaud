@@ -15,9 +15,10 @@ import {
 } from '@quenk/noni/lib/io/file';
 import { Object } from '@quenk/noni/lib/data/json';
 
-import {   resolve  } from './filesystem';
-import { TestSuiteConf    } from './conf';
-import { readTestSuiteFileDeep, runTestSuite } from './cli';
+import { TestSuiteConf } from './conf/test/suite';
+import { runTestSuite } from './conf/test/run';
+import { resolve } from './filesystem';
+import { readTestSuiteFileDeep } from './cli';
 
 /**
  * CLIOptions received from the terminal.
