@@ -1,5 +1,6 @@
 import { Precondition } from '@quenk/preconditions';
-import { ConfValue, TestSuiteConf, TestConf } from './conf';
+import { TestSuiteConf } from './conf/test/suite';
+import { ConfValue, TestConf } from './conf/test';
 /**
  * validateTestConf validates a single object as a TestConf.
  */

@@ -1,5 +1,5 @@
 import { Future } from '@quenk/noni/lib/control/monad/future';
-import { TestSuiteConf } from './conf';
+import { TestSuiteConf } from './conf/test/suite';
 /**
  * readTestSuiteFile reads a TestSuiteConf at a file path, initializing any
  * unspecified values to their defaults.
@@ -14,7 +14,3 @@ export declare const readTestSuiteFile: (filePath: string) => Future<TestSuiteCo
  * TODO: This function should be made stack safe at some point.
  */
 export declare const readTestSuiteFileDeep: (filePath: string) => Future<TestSuiteConf[]>;
-/**
- * runTestSuite runs all the tests within a suite.
- */
-export declare const runTestSuite: (conf: TestSuiteConf) => Future<undefined>;

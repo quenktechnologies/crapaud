@@ -13,7 +13,7 @@ module.exports = {
 
             "injectMocha": true,
 
-            "transform": (_,src)=>
+            "transform": (_,__,src)=>
              pure(`describe('should use transform function', ()=> ${src})`)
 
         }

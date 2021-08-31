@@ -46,7 +46,7 @@ export const resolveAll = (list: string[], cwd = process.cwd()) =>
  * execFile
  */
 export const execFile =
-    (path: string, args: string[] = []) => {console.error('execing file pa', path); 
+    (path: string, args: string[] = []) => {
         return fromCallback(cb =>
             _execFile(path, args, (err, stdout, stderr) => {
 
