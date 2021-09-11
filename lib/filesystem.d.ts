@@ -1,4 +1,5 @@
 #! /usr/bin/env node
+/// <reference types="node" />
 import * as json from '@quenk/noni/lib/data/json';
 import { Future } from '@quenk/noni/lib/control/monad/future';
 /**
@@ -24,4 +25,4 @@ export declare const execFile: (path: string, args?: string[]) => Future<unknown
 /**
  * spawn
  */
-export declare const spawn: (path: string, args?: string[]) => void;
+export declare const spawn: (path: string, args?: string[]) => Future<import("child_process").ChildProcessWithoutNullStreams>;

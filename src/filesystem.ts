@@ -57,12 +57,10 @@ export const execFile =
                 cb(err);
 
             }));
-}
+    }
 
 /**
  * spawn
  */
-export const spawn =
-    (path: string, args: string[] = []) => {
-        _spawn(path, args, { detached: true });
-    }
+export const spawn =  (path: string, args: string[] = []) => 
+  attempt(()=> _spawn(path, args, { detached: true }));
